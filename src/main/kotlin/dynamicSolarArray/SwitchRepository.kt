@@ -1,27 +1,21 @@
 package de.klg71.solarman_sensor.dynamicSolarArray
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import feign.Feign
-import feign.jackson.JacksonDecoder
-import feign.jackson.JacksonEncoder
+import de.klg71.solarman_sensor.switches.ShellySwitch
+import de.klg71.solarman_sensor.switches.SmartSwitch
 import org.springframework.stereotype.Component
 
 @Component
 internal class SwitchRepository(private val objectMapper: ObjectMapper) {
-    private val switches = listOf(
-        Switch("solar-2", "192.168.178.71"),
-        Switch("solar-3", "192.168.178.73"),
-        Switch("solar-4", "192.168.178.75"),
+    private val switches: List<SmartSwitch> = listOf(
+        ShellySwitch("solar-2", "192.168.178.71", objectMapper),
+        ShellySwitch("solar-3", "192.168.178.73", objectMapper),
+        ShellySwitch("solar-4", "192.168.178.75", objectMapper),
     )
-    private val clients = switches.associate {
-        it.name to
-                Feign.builder().decoder(JacksonDecoder(objectMapper)).encoder(JacksonEncoder(objectMapper))
-                    .target(SwitchClient::class.java, "http://${it.ip}")
-    }
 
-    fun byName(name: String) = switches.firstOrNull { it.name == name }
+    fun byName(id: String) = switches.firstOrNull { it.id() == id }
 
-    fun status(name: String) = clients[name]?.switchStatus()?.output ?: false
+    fun status(id: String) = byName(id)?.status() ?: false
 
-    fun setStatus(name: String, output: Boolean) = clients[name]?.set(output)
+    fun setStatus(id: String, output: Boolean) = byName(id)?.setStatus(output)
 }

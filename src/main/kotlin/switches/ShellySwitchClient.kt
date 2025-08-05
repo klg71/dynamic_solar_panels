@@ -1,11 +1,11 @@
-package de.klg71.solarman_sensor.dynamicSolarArray
+package de.klg71.solarman_sensor.switches
 
 import feign.Param
 import feign.RequestLine
 
 data class SwitchStatus(val id: Int, val source: String, val output: Boolean, val temperature: Map<String, Float>)
 
-internal interface SwitchClient {
+internal interface ShellySwitchClient {
     @RequestLine("GET /rpc/Switch.GetStatus?id=0")
     fun switchStatus(): SwitchStatus
 
