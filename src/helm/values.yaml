@@ -1,0 +1,15 @@
+replicaCount: 1
+
+image:
+  repository: mayope/solarman
+  pullPolicy: Always
+  version: latest
+
+serviceAccount:
+  create: true
+
+service:
+  type: ClusterIP
+  port: 8080
+  healthCheckPath: /actuator/health/liveness
+

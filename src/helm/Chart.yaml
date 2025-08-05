@@ -1,0 +1,7 @@
+apiVersion: v2
+name: solarman
+description: A Helm chart for the solarman
+
+type: application
+
+version: 0.1.0
