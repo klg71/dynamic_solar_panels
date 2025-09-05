@@ -18,7 +18,9 @@ deploy{
             project.findProperty(key) as String? ?: error(
                 "You have to set $key in settings.gradle before using this project"
             )
-        dockerBuild()
+        dockerBuild{
+            buildOutputTask="bootJar"
+        }
         dockerLogin {
             registryRoot = "https://index.docker.io/v1/"
             loginMethod = net.mayope.deployplugin.tasks.DockerLoginMethod.CLASSIC

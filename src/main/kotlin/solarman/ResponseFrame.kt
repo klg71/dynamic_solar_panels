@@ -7,7 +7,7 @@ class ResponseFrame {
 
     companion object {
 
-        fun parse(bytes: ByteArray): SolarInfo? {
+        fun parseSolarInfo(bytes: ByteArray): SolarInfo? {
             val reader = ByteArrayInputStream(bytes)
             val header = reader.read()
 
@@ -54,6 +54,11 @@ class ResponseFrame {
             } else {
                 return null
             }
+        }
+
+        @OptIn(ExperimentalStdlibApi::class)
+        fun parseHoldingRegister(buffer: ByteArray) {
+            println(buffer.toHexString())
         }
     }
 

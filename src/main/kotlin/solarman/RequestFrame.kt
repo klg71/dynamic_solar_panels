@@ -41,12 +41,13 @@ data class RequestFrame(val payload: MTURequestFrame) {
     }
 
     companion object {
-        fun readInputRegister(target: MTURequestTarget, functionCode: Byte, startAddress: UShort): RequestFrame {
+        fun readRegister(target: MTURequestTarget, functionCode: Byte, startAddress: UShort): RequestFrame {
             return MTURequestFrame.MTURequestFramePayload(functionCode, startAddress, 0x1).let {
                 MTURequestFrame(target, it)
             }.let {
                 RequestFrame(it)
             }
         }
+
     }
 }

@@ -6,13 +6,29 @@ import java.net.Socket
 fun querySolarInfo(): SolarInfo? {
     val client = Socket("192.168.178.67", 8899)
 
-    val request = RequestFrame.readInputRegister(MTURequestTarget.solarInverter, 4, 0.toUShort())
+    val request = RequestFrame.readRegister(MTURequestTarget.solarInverter, 4, 0.toUShort())
     val bytes = request.toBytes()
 
     client.outputStream.write(bytes)
     val buffer = ByteArray(1024)
     client.getInputStream().read(buffer)
-    return ResponseFrame.parse(buffer).also {
+    return ResponseFrame.parseSolarInfo(buffer).also {
+        client.close()
+    }
+}
+
+@OptIn(ExperimentalStdlibApi::class)
+fun queryHoldingRegisters() {
+    val client = Socket("192.168.178.67", 8899)
+
+    val request = RequestFrame.readRegister(MTURequestTarget.dataLoggingStick, 3, 0.toUShort())
+    val bytes = request.toBytes()
+
+    client.outputStream.write(bytes)
+    val buffer = ByteArray(1024)
+    client.getInputStream().read(buffer)
+    println(buffer.toHexString(HexFormat.UpperCase))
+    ResponseFrame.parseHoldingRegister(buffer).also {
         client.close()
     }
 }

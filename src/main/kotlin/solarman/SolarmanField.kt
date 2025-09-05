@@ -14,5 +14,5 @@ enum class SolarmanField(val address: Int, val ratio: Float, val unit: String) {
 
     acVoltage(11, 0.1f, "V"),
     totalPower(15, 0.1f, "W"),
-    dailyProduction(20, 0.1f, "kWh"),
+    dailyProduction(20, 0.01f, "kWh"),
 }
