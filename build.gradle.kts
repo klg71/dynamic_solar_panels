@@ -1,16 +1,16 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
-plugins{
+plugins {
     kotlin("jvm") version "2.1.21"
     id("org.springframework.boot") version "3.2.2"
     id("io.spring.dependency-management") version "1.1.4"
     kotlin("plugin.spring") version "1.9.25"
     id("net.mayope.deployplugin") version ("0.0.65")
 }
-repositories{
-  mavenCentral()
+repositories {
+    mavenCentral()
 }
-deploy{
+deploy {
     default {
         serviceName = "solarman"
 
@@ -18,8 +18,8 @@ deploy{
             project.findProperty(key) as String? ?: error(
                 "You have to set $key in settings.gradle before using this project"
             )
-        dockerBuild{
-            buildOutputTask="bootJar"
+        dockerBuild {
+            buildOutputTask = "bootJar"
         }
         dockerLogin {
             registryRoot = "https://index.docker.io/v1/"
@@ -27,7 +27,7 @@ deploy{
             loginUsername = project.loadFromSettingsGradle("dockerHubRegistryUser")
             loginPassword = project.loadFromSettingsGradle("dockerHubRegistryPassword")
         }
-        dockerPush{
+        dockerPush {
             registryRoot = "mayope"
             loginMethod = net.mayope.deployplugin.tasks.DockerLoginMethod.CLASSIC
             loginUsername = project.loadFromSettingsGradle("dockerHubRegistryUser")
@@ -44,7 +44,7 @@ deploy{
 group = "de.klg71.solar"
 version = "0.0.1-SNAPSHOT"
 
-dependencies{
+dependencies {
     kotlin("stdlib")
 
     implementation("org.springframework.boot:spring-boot-starter-web")
