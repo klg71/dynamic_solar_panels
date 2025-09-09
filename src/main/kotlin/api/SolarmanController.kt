@@ -1,15 +1,11 @@
 package de.klg71.solarman_sensor.api
 
-import de.klg71.solarman_sensor.solarman.queryHoldingRegisters
-import de.klg71.solarman_sensor.solarman.querySolarInfo
+import de.klg71.solarman_sensor.solarman.SolarCommunicator
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
-internal class SolarmanController {
+internal class SolarmanController(private val solarCommunicator: SolarCommunicator) {
     @GetMapping
-    fun data() = querySolarInfo()
-
-    @GetMapping("/holding")
-    fun holdingRegister() = queryHoldingRegisters()
+    suspend fun data() = solarCommunicator.readSolarInfo()
 }
