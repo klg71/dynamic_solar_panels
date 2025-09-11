@@ -50,15 +50,15 @@ data class RequestFrame(val payload: MTURequestFrame) {
         }
 
         suspend fun setPower(power: Int): RequestFrame {
-            if (power !in 201..<2000) {
+            if (power !in 200..<2001) {
                 error("Power can only be set between 200 and 2000, you tried to set $power")
             }
             return MTURequestFrame.MTURequestFramePayload(
                 0x02,
                 0x47D.toUShort(),
-                ((200 + power / 2000) * 100).toShort(), slaveId = 0x02
+                (((power-200) / 20)).toShort()
             ).let {
-                MTURequestFrame(MTURequestTarget.dataLoggingStick, it, "d002")
+                MTURequestFrame(MTURequestTarget.solarInverter, it, "d002")
             }.let {
                 RequestFrame(it)
             }

@@ -2,10 +2,10 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     kotlin("jvm") version "2.1.21"
-    id("org.springframework.boot") version "3.2.2"
+    id("org.springframework.boot") version "3.4.2"
     id("io.spring.dependency-management") version "1.1.4"
     kotlin("plugin.spring") version "1.9.25"
-    id("net.mayope.deployplugin") version ("0.0.65")
+    id("net.mayope.deployplugin") version ("0.0.68")
 }
 repositories {
     mavenCentral()
@@ -51,6 +51,13 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+
+    implementation("io.projectreactor:reactor-core:3.7.9")
+    runtimeOnly("org.jetbrains.kotlinx:kotlinx-coroutines-reactor:1.10.2")
+    implementation("org.reactivestreams:reactive-streams:1.0.4")
+
+    implementation("io.github.davidepianca98:kmqtt-common-jvm:1.0.0")
+    implementation("io.github.davidepianca98:kmqtt-client-jvm:1.0.0")
 
     implementation("io.github.openfeign:feign-core:13.6")
     implementation("io.github.openfeign:feign-jackson:13.6")

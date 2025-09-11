@@ -16,8 +16,8 @@ fun querySolarInfo(): SolarInfo? {
         client.close()
     }
 }
-@OptIn(ExperimentalStdlibApi::class)
-suspend fun setPower(power:Int) {
+
+suspend fun setPower(power: Int) {
     val client = Socket("192.168.178.67", 8899)
 
     val request = RequestFrame.setPower(power)
@@ -26,24 +26,7 @@ suspend fun setPower(power:Int) {
     client.outputStream.write(bytes)
     val buffer = ByteArray(1024)
     client.getInputStream().read(buffer)
-    println(buffer.toHexString(HexFormat.UpperCase))
     client.close()
-}
-
-@OptIn(ExperimentalStdlibApi::class)
-fun queryHoldingRegisters() {
-    val client = Socket("192.168.178.67", 8899)
-
-    val request = RequestFrame.readRegister(MTURequestTarget.dataLoggingStick, 3, 0.toUShort())
-    val bytes = request.toBytes()
-
-    client.outputStream.write(bytes)
-    val buffer = ByteArray(1024)
-    client.getInputStream().read(buffer)
-    println(buffer.toHexString(HexFormat.UpperCase))
-    ResponseFrame.parseHoldingRegister(buffer).also {
-        client.close()
-    }
 }
 
 

@@ -3,7 +3,6 @@ package de.klg71.solarman_sensor.power
 import com.fasterxml.jackson.databind.ObjectMapper
 import de.klg71.solarman_sensor.getLogger
 import de.klg71.solarman_sensor.solarman.SolarCommunicator
-import de.klg71.solarman_sensor.solarman.setPower
 import feign.Feign
 import feign.jackson.JacksonDecoder
 import feign.jackson.JacksonEncoder
@@ -19,27 +18,29 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 @Service
 internal class PowerRegulator(private val objectMapper: ObjectMapper, private val dispatcher: CoroutineDispatcher,
     private val solarCommunicator: SolarCommunicator) {
-    private lateinit var client: HomeAssistantClient
-    private val token =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkN2U4MmRlMGM1Zjk0MmU4YmVmNDY4NzA4ZjNhMGQ3NyIsImlhdCI6MTc1NzA4MTUzNywiZXhwIjoyMDcyNDQxNTM3fQ.cYRHOxjm9uprcMhHSfWiqqBxVA79T9bLF_FNQzpUAIY"
+    private lateinit var smartMeterClient: BitshakeClient
+
     private val scope = CoroutineScope(dispatcher)
     private val logger = getLogger(PowerRegulator::class.java)
 
     @OptIn(ExperimentalAtomicApi::class)
     private val currentSetPower = AtomicInt(1600)
-    private val POWER_STEPPING = 50
+    private val POWER_THRESHOLD = 100
 
+    @OptIn(ExperimentalAtomicApi::class)
     @PostConstruct
     fun init() {
-        client = Feign.Builder().run {
+        smartMeterClient = Feign.Builder().run {
             decoder(JacksonDecoder(objectMapper))
             encoder(JacksonEncoder(objectMapper))
-            requestInterceptor {
-                it.header("Authorization","Bearer $token")
-            }
-            target(HomeAssistantClient::class.java, "https://homeassistant.tail592ffe.ts.net")
+            target(BitshakeClient::class.java, "http://192.168.178.79")
         }
-        scope.launch { controlPowerJob() }
+        scope.launch {
+            solarCommunicator.readSolarInfo()?.let {
+                currentSetPower.store(it.totalPower.toInt())
+            }
+            controlPowerJob()
+        }
     }
 
     private suspend fun controlPowerJob() {
@@ -50,35 +51,51 @@ internal class PowerRegulator(private val objectMapper: ObjectMapper, private va
             } catch (e: Throwable) {
                 logger.error("Error while controlling power", e)
             }
-            delay(10)
+            delay(500)
         }
     }
+
+    private val INVERTER_OFFSET = 200
 
     @OptIn(ExperimentalAtomicApi::class)
     private suspend fun controlPower() {
-        client.getCurrentPower().state.toInt().let {
-            if (it < POWER_STEPPING*2) {
+        smartMeterClient.getCurrentPower().statusSNS.SGM.power.let {
+            if (it < -POWER_THRESHOLD && currentSetPower.load() > 200) {
                 logger.info("Inverter produces too much power, decreasing now")
-                val newPower = currentSetPower.load() - POWER_STEPPING
-                if (newPower > 200) {
-                    solarCommunicator.setPower(newPower)
-                    currentSetPower.store(newPower)
-                    logger.info("Decreased to: {}",newPower)
-                }
-            }
-            if(it>POWER_STEPPING*2){
-                logger.info("Inverter produces too little power, increasing now")
-                val newPower = currentSetPower.load() + POWER_STEPPING
-                if (newPower < 2000) {
-                    solarCommunicator.setPower(newPower)
-                    currentSetPower.store(newPower)
-                    logger.info("Increased to: {}",newPower)
+                val newPower = (currentSetPower.load() + it).let {
+                    limitPower(it - INVERTER_OFFSET)
                 }
 
+                solarCommunicator.setPower(newPower)
+                currentSetPower.store(newPower)
+                delay(10000)
+                logger.info("Decreased to: {}", newPower)
+            }
+            if (it > POWER_THRESHOLD && currentSetPower.load() < 2000) {
+                logger.info("Inverter produces too little power, increasing now")
+                val newPower = (currentSetPower.load() + it).let {
+                    limitPower(it)
+                }
+                solarCommunicator.setPower(newPower)
+                currentSetPower.store(newPower)
+                logger.info("Increased to: {}", newPower)
+                delay(10000)
             }
 
         }
     }
+
+    private val INVERTER_UPPER_LIMIT = 2000
+    private val INVERTER_LOWER_LIMIT = 200
+    private fun limitPower(power: Int) =
+        when {
+            power < 200 -> INVERTER_LOWER_LIMIT
+            power > 2000 -> INVERTER_UPPER_LIMIT
+            else -> power
+        }
+
+    @OptIn(ExperimentalAtomicApi::class)
+    public fun getCurrentSetPower() = currentSetPower.load()
 
 
 }
