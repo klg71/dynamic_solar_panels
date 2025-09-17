@@ -1,21 +1,35 @@
 package de.klg71.solarman_sensor.solarman
 
+import de.klg71.solarman_sensor.getLogger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.springframework.stereotype.Component
+import java.net.Socket
 import java.time.Duration
 
 @Component
 class SolarCommunicator {
+    private val logger = getLogger(SolarCommunicator::class.java)
     private val solarManMutex = Mutex()
 
     suspend fun readSolarInfo(): SolarInfo? {
         var info: SolarInfo? = null
-        withTimeout(Duration.ofSeconds(5).toMillis()) {
-            solarManMutex.withLock {
-                info = querySolarInfo()
+        solarManMutex.withLock {
+            try {
+
+                val client = newSocket()
+                withTimeoutOrNull(Duration.ofSeconds(5).toMillis()) {
+                    info = querySolarInfo(client)
+                }.let {
+                    if (it == null) {
+                        logger.info("Solar Inverter not reachable")
+                    }
+                }
+                client.close()
+            } catch (e: Exception) {
+                logger.warn("Unable to query solar info", e)
             }
         }
         delay(1000)
@@ -23,13 +37,27 @@ class SolarCommunicator {
     }
 
     suspend fun setPower(power: Int) {
-        withTimeout(Duration.ofSeconds(5).toMillis()) {
-            solarManMutex.withLock {
-                de.klg71.solarman_sensor.solarman.setPower(power)
+
+        solarManMutex.withLock {
+            try {
+
+                val client = newSocket()
+                withTimeoutOrNull(Duration.ofSeconds(5).toMillis()) {
+                    setPower(power, client)
+                }.let {
+                    if (it == null) {
+                        logger.info("Solar Inverter not reachable")
+                    }
+                }
+                client.close()
+            } catch (e: Exception) {
+                logger.warn("Unable to set power", e)
             }
         }
         delay(1000)
     }
+
+    private fun newSocket(): Socket = Socket("192.168.178.67", 8899)
 
 
 }

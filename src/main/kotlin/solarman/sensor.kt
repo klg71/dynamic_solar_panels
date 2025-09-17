@@ -3,8 +3,7 @@ package de.klg71.solarman_sensor.solarman
 import java.net.Socket
 
 
-fun querySolarInfo(): SolarInfo? {
-    val client = Socket("192.168.178.67", 8899)
+fun querySolarInfo(client:Socket): SolarInfo? {
 
     val request = RequestFrame.readRegister(MTURequestTarget.solarInverter, 4, 0.toUShort())
     val bytes = request.toBytes()
@@ -12,13 +11,10 @@ fun querySolarInfo(): SolarInfo? {
     client.outputStream.write(bytes)
     val buffer = ByteArray(1024)
     client.getInputStream().read(buffer)
-    return ResponseFrame.parseSolarInfo(buffer).also {
-        client.close()
-    }
+    return ResponseFrame.parseSolarInfo(buffer)
 }
-
-suspend fun setPower(power: Int) {
-    val client = Socket("192.168.178.67", 8899)
+@OptIn(ExperimentalStdlibApi::class)
+suspend fun setPower(power:Int,client:Socket) {
 
     val request = RequestFrame.setPower(power)
     val bytes = request.toBytes()
