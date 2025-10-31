@@ -25,6 +25,9 @@ data class BitshakeState(
 internal interface HomeAssistantClient {
     @RequestLine("GET /api/states/sensor.obk5398d833_apparent_power")
     fun getCurrentInverterPower(): HomeAssistantState
+
+    @RequestLine("GET /api/states/sensor.switch.switch_kitchen_heating_1")
+    fun getCurrentKitchenState(): HomeAssistantState
 }
 
 internal interface BitshakeClient {

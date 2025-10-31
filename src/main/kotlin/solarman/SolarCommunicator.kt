@@ -6,6 +6,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import org.springframework.stereotype.Component
+import java.net.InetSocketAddress
 import java.net.Socket
 import java.time.Duration
 
@@ -40,7 +41,6 @@ class SolarCommunicator {
 
         solarManMutex.withLock {
             try {
-
                 val client = newSocket()
                 withTimeoutOrNull(Duration.ofSeconds(5).toMillis()) {
                     setPower(power, client)
@@ -57,7 +57,9 @@ class SolarCommunicator {
         delay(1000)
     }
 
-    private fun newSocket(): Socket = Socket("192.168.178.67", 8899)
+    private fun newSocket(): Socket = Socket().also {
+        it.connect(InetSocketAddress("192.168.178.67", 8899), Duration.ofSeconds(2).toMillis().toInt())
+    }
 
 
 }
