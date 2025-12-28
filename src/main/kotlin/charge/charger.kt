@@ -1,25 +1,28 @@
-package de.klg71.solarman_sensor.solarman
+package de.klg71.solarman_sensor.charge
 
+import de.klg71.solarman_sensor.solarman.MTURequestTarget
+import de.klg71.solarman_sensor.solarman.RequestFrame
+import de.klg71.solarman_sensor.solarman.ResponseFrame
+import de.klg71.solarman_sensor.solarman.SolarInfo
 import kotlinx.coroutines.delay
 import java.net.Socket
 
 
-suspend fun querySolarInfo(client: Socket): SolarInfo? {
+suspend fun queryChargingInfo(client: Socket){
 
-    val request = RequestFrame.readRegister(MTURequestTarget.solarInverter.byte, 4, 0.toUShort())
+    val request = RequestFrame.Companion.readRegister(1, 3, 0.toUShort(),18)
     val bytes = request.toBytes()
 
     client.outputStream.write(bytes)
     val buffer = ByteArray(1024)
     delay(1000)
     client.getInputStream().read(buffer, 0, client.getInputStream().available())
-    return ResponseFrame.parseSolarInfo(buffer)
 }
 
 @OptIn(ExperimentalStdlibApi::class)
 suspend fun setPower(power: Int, client: Socket) {
 
-    val request = RequestFrame.setPower(power)
+    val request = RequestFrame.Companion.setPower(power)
     val bytes = request.toBytes()
 
     client.outputStream.write(bytes)

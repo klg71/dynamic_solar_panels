@@ -41,8 +41,8 @@ data class RequestFrame(val payload: MTURequestFrame) {
     }
 
     companion object {
-        fun readRegister(target: MTURequestTarget, functionCode: Byte, startAddress: UShort): RequestFrame {
-            return MTURequestFrame.MTURequestFramePayload(functionCode, startAddress, 0x1).let {
+        fun readRegister(target: Byte, functionCode: Byte, startAddress: UShort,numberOfRegisters:Short=0x1): RequestFrame {
+            return MTURequestFrame.MTURequestFramePayload(functionCode, startAddress, numberOfRegisters).let {
                 MTURequestFrame(target, it)
             }.let {
                 RequestFrame(it)
@@ -58,7 +58,7 @@ data class RequestFrame(val payload: MTURequestFrame) {
                 0x47D.toUShort(),
                 (((power-200) / 20)).toShort()
             ).let {
-                MTURequestFrame(MTURequestTarget.solarInverter, it, "d002")
+                MTURequestFrame(MTURequestTarget.solarInverter.byte, it, "d002")
             }.let {
                 RequestFrame(it)
             }

@@ -2,7 +2,7 @@ package de.klg71.solarman_sensor.solarman
 
 import java.nio.ByteBuffer
 
-data class MTURequestFrame(val target: MTURequestTarget, val payload: MTURequestFramePayload,val sensorType:String="0000") {
+data class MTURequestFrame(val target: Byte, val payload: MTURequestFramePayload,val sensorType:String="0000") {
 
     data class MTURequestFramePayload(val functionCode: Byte, val address: UShort, val numberOfRegisters: Short,val slaveId:Byte=0x01) {
         fun toBytes(): ByteArray {
@@ -31,7 +31,7 @@ data class MTURequestFrame(val target: MTURequestTarget, val payload: MTURequest
     fun toBytes(): ByteArray {
         return buildList {
             //header
-            add(target.byte)
+            add(target)
             addAll(sensorTypeBytes)
             addAll(totalWorkingTime)
             addAll(powerOnTime)

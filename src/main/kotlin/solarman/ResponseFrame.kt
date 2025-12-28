@@ -1,5 +1,7 @@
 package de.klg71.solarman_sensor.solarman
 
+import de.klg71.solarman_sensor.charge.ChargerInfo
+import de.klg71.solarman_sensor.charge.ChargerField
 import java.io.ByteArrayInputStream
 import java.nio.ByteBuffer
 
@@ -7,6 +9,36 @@ class ResponseFrame {
 
     companion object {
 
+        fun parseChargerInfo(bytes: ByteArray): ChargerInfo? {
+            val reader = ByteArrayInputStream(bytes)
+
+            val mtuId = reader.read()
+            val functionCode = reader.read()
+            val incomingData = mutableListOf<UShort>()
+            val fields = mutableMapOf<ChargerField, Float>()
+            if (functionCode > 0) {
+                val lengthMtu = reader.read()
+                repeat(lengthMtu) {
+                    incomingData.add(ByteBuffer.wrap(reader.readNBytes(2)).getShort().toUShort())
+                }
+                ChargerField.entries.forEach {
+                    fields[it] = (incomingData[it.address].toFloat() * it.ratio)
+                }
+                return ChargerInfo(
+                    fields[ChargerField.setVoltage]?:0f,
+                    fields[ChargerField.setCurrent]?:0f,
+                    fields[ChargerField.inputVoltage]?:0f,
+                    fields[ChargerField.temperature]?:0f,
+                    fields[ChargerField.outputPower]?:0f,
+                    (fields[ChargerField.constantVoltageProtection]?:0f)>0f,
+                    (fields[ChargerField.switchOutput]?:0f)>0f,
+
+
+                )
+            } else {
+                return null
+            }
+        }
         fun parseSolarInfo(bytes: ByteArray): SolarInfo? {
             val reader = ByteArrayInputStream(bytes)
             val header = reader.read()
