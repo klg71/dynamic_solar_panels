@@ -16,6 +16,8 @@ class Charger(
 
     companion object {
         const val VOLTAGE_STEP = 0.1f
+        const val START_CURRENT=1
+        const val CURRENT_STEP=1
     }
 
     private var buckConverterConnected = false
@@ -50,13 +52,21 @@ class Charger(
                 client.setChargerOnState(false)
                 delay(1000)
             }
-            waitForValidBatteryVoltage()
-            while ((waitForValidBatteryVoltage()) <= config.maxVoltage) {
-                val setVoltage = (waitForValidBatteryVoltage() + VOLTAGE_STEP)
-                    .coerceAtMost(config.maxVoltage)
-                client.command("ZK10022_Set_Current ${config.chargingCurrent}")
-                client.command("ZK10022_Set_Voltage $setVoltage")
-                client.setChargerOnState(true)
+            val batteryVoltage=waitForValidBatteryVoltage()
+            if(batteryVoltage>=config.maxVoltage){
+                return
+            }
+            var setVoltage=(batteryVoltage+0.1f).coerceAtMost(config.maxVoltage)
+            client.command("ZK10022_Set_Current ${config.chargingCurrent}")
+            client.command("ZK10022_Set_Voltage $setVoltage")
+            client.setChargerOnState(true)
+
+            while (setVoltage <= config.maxVoltage) {
+                if(bmsCurrent()<0.1f){
+                    setVoltage += 0.1f
+                    logger.info("Increasing voltage to ")
+                }
+
             }
         }
     }
@@ -71,11 +81,13 @@ class Charger(
 
     private fun chargerOnline(): Boolean = mqttStore.getString(config.mqqtBuckConverterTopic + "/connected") == "online"
     private fun chargerIp(): String? = mqttStore.getString(config.mqqtBuckConverterTopic + "/ip")
+    private fun chargerOutputCurrent(): Float? = mqttStore.getFloat(config.mqqtBuckConverterTopic + "/output_current")
 
     private fun bmsOnline(): Boolean = mqttStore.getString(config.mqqtBMSTopic + "/connected") == "online"
     private fun bmsIp(): String? = mqttStore.getString(config.mqqtBMSTopic + "/ip")
     private fun bmsError(): String? = mqttStore.getString(config.mqqtBMSTopic + "/daly_bms_error")
     private fun bmsVoltage(): Float? = mqttStore.getFloat(config.mqqtBMSTopic + "/daly_bms_cum_voltage")
+    private fun bmsCurrent(): Float? = mqttStore.getFloat(config.mqqtBMSTopic + "/daly_bms_current")
     private suspend fun waitForValidBatteryVoltage(): Float {
         while (true) {
             val voltage = bmsVoltage()
