@@ -62,6 +62,9 @@ dependencies {
     implementation("io.github.openfeign:feign-core:13.6")
     implementation("io.github.openfeign:feign-jackson:13.6")
 
+    implementation("io.github.davidepianca98:kmqtt-common:1.0.0")
+    implementation("io.github.davidepianca98:kmqtt-client:1.0.0")
+
     runtimeOnly("com.h2database:h2")
 }
 tasks.withType<KotlinCompile> {
