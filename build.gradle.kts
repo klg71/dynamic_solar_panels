@@ -1,11 +1,12 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-    kotlin("jvm") version "2.1.21"
+    kotlin("jvm") version "2.3.0-Beta2"
     id("org.springframework.boot") version "3.4.2"
     id("io.spring.dependency-management") version "1.1.4"
     kotlin("plugin.spring") version "1.9.25"
-    id("net.mayope.deployplugin") version ("0.0.68")
+    id("net.mayope.deployplugin") version ("0.0.75")
 }
 repositories {
     mavenCentral()
@@ -67,8 +68,13 @@ dependencies {
 
     runtimeOnly("com.h2database:h2")
 }
-tasks.withType<KotlinCompile> {
-    kotlinOptions {
-        freeCompilerArgs += "-Xjsr305=strict"
+
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile::class.java).all {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_24)
     }
+}
+java {
+    sourceCompatibility = JavaVersion.VERSION_24
+    targetCompatibility = JavaVersion.VERSION_24
 }
