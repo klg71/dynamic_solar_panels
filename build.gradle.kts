@@ -63,8 +63,8 @@ dependencies {
     implementation("io.github.openfeign:feign-core:13.6")
     implementation("io.github.openfeign:feign-jackson:13.6")
 
-    implementation("io.github.davidepianca98:kmqtt-common:1.0.0")
-    implementation("io.github.davidepianca98:kmqtt-client:1.0.0")
+    implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")
+    implementation("com.hierynomus:sshj:0.38.0")
 
     runtimeOnly("com.h2database:h2")
 }
