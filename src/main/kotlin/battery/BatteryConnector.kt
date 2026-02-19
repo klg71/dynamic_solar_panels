@@ -2,14 +2,16 @@ package de.klg71.solarman_sensor.battery
 
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import org.springframework.stereotype.Component
 import java.nio.charset.Charset
+import java.time.Duration
 import java.util.concurrent.TimeUnit
 
 
+@OptIn(ExperimentalUnsignedTypes::class)
 @Component
 class BatteryConnector(private val dispatcher: CoroutineDispatcher) {
     private val client = SSHClient()
@@ -36,15 +38,25 @@ class BatteryConnector(private val dispatcher: CoroutineDispatcher) {
         return devices
     }
 
-    @OptIn(ExperimentalStdlibApi::class)
-    fun sendRequest(deviceAddress: String, buffer: ByteArray): ByteArray {
+    @OptIn(ExperimentalStdlibApi::class, ExperimentalUnsignedTypes::class)
+    suspend fun sendRequest(deviceAddress: String, buffer: ByteArray): List<Int> {
         val session = client.startSession()
-        val answer = session.exec(
+        val exec = session.exec(
             "/usr/bin/python /home/lukas/repositories/battery-manager/bluetooth-client.py " +
                     deviceAddress + " " +
                     buffer.toHexString()
-        ).inputStream.readAllBytes().toString(Charset.defaultCharset())
-        println(answer)
-        return answer.hexToByteArray()
+        )
+        var answer = ""
+        val start = System.currentTimeMillis()
+        while (answer.isEmpty()) {
+            answer = exec.inputStream.readAllBytes().toString(Charset.defaultCharset()).trim()
+            delay(500)
+            if (System.currentTimeMillis() - start > Duration.ofSeconds(5).toMillis()) {
+                break
+            }
+        }
+        session.close()
+        return answer.hexToUByteArray().map { it.toInt() }
     }
+
 }
