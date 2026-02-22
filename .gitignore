@@ -65,3 +65,4 @@ chromedriver.exe
 deps
 logs
 infrastructure/redis/.kube/*
+*.lck

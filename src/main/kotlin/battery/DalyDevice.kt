@@ -12,6 +12,9 @@ import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.springframework.stereotype.Component
 import java.nio.charset.Charset
 import java.time.Duration
+import java.time.LocalDate
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 enum class Measurement(val unit: String, val deviceClass: String) {
     VOLT("V", "voltage"),
@@ -22,7 +25,7 @@ enum class Measurement(val unit: String, val deviceClass: String) {
     STRING("", "enum"),
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
+@OptIn(ExperimentalUnsignedTypes::class, ExperimentalAtomicApi::class)
 @Component
 class DalyDevice(
     private val batteryConnector: BatteryConnector, private val dispatcher: CoroutineDispatcher,
@@ -33,8 +36,10 @@ class DalyDevice(
 
     private val deviceAddress = "D2:19:08:01:16:96"
     private val name = "1"
+    private val heatingPin = 14
     private var found = false
     private val numberOfTempSensors = 2
+    private val shouldConnect = AtomicBoolean(true)
 
     private val scope = CoroutineScope(dispatcher)
 
@@ -51,10 +56,17 @@ class DalyDevice(
         homeAssistantDiscovery(Measurement.VOLT, "max-cell-voltage", "maxCellVoltage")
         homeAssistantDiscovery(Measurement.STRING, "state", "state")
         homeAssistantDiscovery(Measurement.STRING, "errors", "errors")
+        homeAssistantDiscovery(Measurement.STRING, "last-update", "lastUpdate")
         homeAssistantDiscoverySwitch("charge-mos", "charge-mos/set", "chargeMos")
         client.subscribe("${mqttRoot()}/charge-mos/set", ::setChargeMos)
         homeAssistantDiscoverySwitch("discharge-mos", "discharge-mos/set", "dischargeMos")
+
         client.subscribe("${mqttRoot()}/discharge-mos/set", ::setDischargeMos)
+
+        homeAssistantDiscoverySwitch("heating", "heating/set", "heating")
+        client.subscribe("${mqttRoot()}/heating/set", ::setHeating)
+        homeAssistantDiscoverySwitch("connected", "connected/set", "connected")
+        client.subscribe("${mqttRoot()}/connected/set", ::setConnected)
     }
 
     private fun setDischargeMos(topic: String, message: MqttMessage) {
@@ -84,6 +96,23 @@ class DalyDevice(
                     setCommand06(0x0121, 0)
                 }
             }
+        }
+    }
+
+    @Suppress("unused")
+    private fun setHeating(topic: String, message: MqttMessage) {
+        message.payload.toString(Charset.defaultCharset()).let {
+            batteryConnector.setPin(heatingPin, it == "ON")
+            publishHeating()
+        }
+    }
+
+    @Suppress("unused")
+    private fun setConnected(topic: String, message: MqttMessage) {
+        message.payload.toString(Charset.defaultCharset()).let {
+            shouldConnect.store(it == "ON")
+            batteryConnector.disconnect()
+            publishConnected()
         }
     }
 
@@ -138,13 +167,13 @@ class DalyDevice(
     private suspend fun monitor() {
         while (true) {
             try {
-                if (found) {
+                if (found && shouldConnect.load()) {
                     publishInfo()
                 }
             } catch (e: Throwable) {
                 logger.error("Error while watching battery", e)
             }
-            delay(Duration.ofSeconds(1).toMillis())
+            delay(Duration.ofSeconds(10).toMillis())
         }
     }
 
@@ -164,7 +193,12 @@ class DalyDevice(
         }
 
         buffer[12] = checksum
-        return batteryConnector.sendRequest(deviceAddress, buffer)
+        var answer = batteryConnector.sendRequest(deviceAddress, buffer)
+        while (answer[2] != address) {
+            delay(1000)
+            answer = batteryConnector.sendRequest(deviceAddress, buffer, clean = true)
+        }
+        return answer
     }
 
     private suspend fun publishInfo() {
@@ -173,6 +207,33 @@ class DalyDevice(
         publishTemp()
         publishMinMaxCellVoltage()
         publishMosState()
+        publishHeating()
+        publishConnected()
+
+        client.publish("${mqttRoot()}/last-update", LocalDate.now().toString())
+    }
+
+    private fun publishHeating() {
+        batteryConnector.getPin(heatingPin).let {
+            client.publish(
+                "${mqttRoot()}/heating", if (it) {
+                    "ON"
+                } else {
+                    "OFF"
+                }
+            )
+        }
+    }
+
+    private fun publishConnected() {
+
+        client.publish(
+            "${mqttRoot()}/connected", if (shouldConnect.load()) {
+                "ON"
+            } else {
+                "OFF"
+            }
+        )
     }
 
     private fun mqttRoot() = "daly/${name}"
@@ -274,8 +335,10 @@ class DalyDevice(
             if (it.isEmpty()) {
                 return
             }
-            buildList<String> {
-
+            if (it[2] != 0x98) {
+                return
+            }
+            buildList {
                 if (bitRead(it[4], 1)) {
                     add("Cell Voltage high l2,")
                 }
@@ -286,7 +349,6 @@ class DalyDevice(
                     add("Cell Voltage low l2,")
                 }
                 if (bitRead(it[4], 2)) {
-
                     add("Cell voltage low l1,")
                 }
                 if (bitRead(it[4], 5)) {
@@ -311,7 +373,7 @@ class DalyDevice(
                     add("Charge Temperature low l2,")
                 }
                 if (bitRead(it[5], 2)) {
-                    add("Charget Temperature low l1,")
+                    add("Charge Temperature low l1,")
                 }
                 if (bitRead(it[5], 5)) {
                     add("Discharge Temperature high l2,")

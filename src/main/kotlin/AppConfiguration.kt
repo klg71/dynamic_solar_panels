@@ -10,6 +10,6 @@ internal class AppConfiguration {
     @Bean
     fun dispatcher() = Dispatchers.Default
     @Bean
-    fun mqttClient()= MqttClient("tcp://homeassistant-mosquitto.tail592ffe.ts.net:1883","dynamic-solar-panels").also { it.connect() }
+    fun mqttClient()= MqttClient("tcp://mosquitto-local:1883","dynamic-solar-panels").also { it.connect() }
 
 }

@@ -52,26 +52,64 @@ class BatteryConnector(private val dispatcher: CoroutineDispatcher) {
         return devices
     }
 
+    fun setPin(nr: Int, up: Boolean) {
+        val session = client.startSession()
+        val cmd = if (up) {
+            session.exec("pinctrl set $nr op dh")
+        } else {
+            session.exec("pinctrl set $nr op dl")
+        }
+        cmd.join(10, TimeUnit.SECONDS)
+        session.close()
+    }
+
+    fun getPin(nr: Int): Boolean {
+        val session = client.startSession()
+        val cmd = session.exec("pinctrl get $nr")
+        cmd.join(10, TimeUnit.SECONDS)
+        val output =
+            cmd.inputStream.readAllBytes().toString(Charset.defaultCharset()).contains("hi")
+        session.close()
+        return output
+    }
+
     @OptIn(ExperimentalStdlibApi::class, ExperimentalUnsignedTypes::class)
-    suspend fun sendRequest(deviceAddress: String, buffer: ByteArray): List<Int> {
+    suspend fun sendRequest(deviceAddress: String, buffer: ByteArray, clean: Boolean = false): List<Int> {
         ensureOpenSession(deviceAddress)
         val start = System.currentTimeMillis()
-        var answer=""
+        var answer = ""
+        if(clean){
+            while (exec.inputStream.available() > 0) {
+                scanner.nextLine()
+            }
+        }
 
-        while((System.currentTimeMillis()-start) < Duration.ofSeconds(5).toMillis()&&answer.isEmpty()) {
+        while ((System.currentTimeMillis() - start) < Duration.ofSeconds(5).toMillis() && answer.isEmpty()) {
             outputStream.write(buffer.toHexString() + "\n")
             outputStream.flush()
             delay(500)
-            while(exec.inputStream.available() > 0) {
-                val line= scanner.nextLine()
-                if(line.startsWith("a5")&&!line.contains(buffer.toHexString())){
-                    answer=line
-                    break
+            while (exec.inputStream.available() > 0) {
+                var wholeLine = scanner.nextLine()
+                while (wholeLine.contains("a5")) {
+                    val next = wholeLine.indexOf("a5", 2)
+                    val line = if (next != -1) {
+                        wholeLine.take(next)
+                    } else {
+                        wholeLine
+                    }
+                    wholeLine = if (next != -1) {
+                        wholeLine.substring(next)
+                    } else {
+                        ""
+                    }
+                    if (line.startsWith("a5") && !line.contains(buffer.toHexString())) {
+                        answer = line
+                        break
+                    }
                 }
             }
-            delay(500)
+            delay(1000)
         }
-        println(answer)
         return answer.hexToUByteArray().map { it.toInt() }
     }
 
@@ -92,5 +130,10 @@ class BatteryConnector(private val dispatcher: CoroutineDispatcher) {
                 }
             }
         }
+    }
+
+    fun disconnect() {
+        session?.close()
+        client.disconnect()
     }
 }
