@@ -12,9 +12,11 @@ import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.springframework.stereotype.Component
 import java.nio.charset.Charset
 import java.time.Duration
-import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
+
 
 enum class Measurement(val unit: String, val deviceClass: String) {
     VOLT("V", "voltage"),
@@ -201,6 +203,8 @@ class DalyDevice(
         return answer
     }
 
+    private val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+
     private suspend fun publishInfo() {
         publishSoc()
         publishErrors()
@@ -210,7 +214,7 @@ class DalyDevice(
         publishHeating()
         publishConnected()
 
-        client.publish("${mqttRoot()}/last-update", LocalDate.now().toString())
+        client.publish("${mqttRoot()}/last-update", LocalDateTime.now().format(formatter))
     }
 
     private fun publishHeating() {

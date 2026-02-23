@@ -8,6 +8,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.springframework.stereotype.Component
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.time.Duration
 
 @Component
@@ -30,7 +31,11 @@ class SolarCommunicator {
                 }
                 client.close()
             } catch (e: Exception) {
-                logger.warn("Unable to query solar info", e)
+                if (e is SocketTimeoutException) {
+                    logger.debug("Device offline")
+                } else {
+                    logger.warn("Unable to query solar info", e)
+                }
             }
         }
         delay(1000)
@@ -51,7 +56,12 @@ class SolarCommunicator {
                 }
                 client.close()
             } catch (e: Exception) {
-                logger.warn("Unable to set power", e)
+                if (e is SocketTimeoutException) {
+                    logger.debug("Device offline")
+                } else {
+
+                    logger.warn("Unable to set power", e)
+                }
             }
         }
         delay(1000)

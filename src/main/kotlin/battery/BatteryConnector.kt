@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
 
 @Component
 class BatteryConnector(private val dispatcher: CoroutineDispatcher) {
-    private val client = SSHClient()
+    private var client = SSHClient()
     private var session: Session? = null
     private lateinit var scanner: Scanner
     private lateinit var outputStream: OutputStreamWriter
@@ -78,7 +78,7 @@ class BatteryConnector(private val dispatcher: CoroutineDispatcher) {
         ensureOpenSession(deviceAddress)
         val start = System.currentTimeMillis()
         var answer = ""
-        if(clean){
+        if (clean) {
             while (exec.inputStream.available() > 0) {
                 scanner.nextLine()
             }
@@ -114,6 +114,12 @@ class BatteryConnector(private val dispatcher: CoroutineDispatcher) {
     }
 
     private suspend fun ensureOpenSession(deviceAddress: String) {
+        if (!client.isConnected) {
+            client = SSHClient()
+            client.addHostKeyVerifier(PromiscuousVerifier())
+            client.connect("garage-pi")
+            client.authPassword("lukas", "1805Rh")
+        }
         if (!(session?.isOpen ?: false)) {
             session = client.startSession()?.also {
                 it.allocateDefaultPTY()

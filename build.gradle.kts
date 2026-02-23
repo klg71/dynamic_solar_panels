@@ -36,7 +36,7 @@ deploy {
         }
 
         deploy {
-            kubeConfig = System.getProperty("user.home") + "/.kube/config-staudens-reihe"
+            kubeConfig = System.getProperty("user.home") + "/.kube/config-staudens"
             targetNamespaces = listOf("homeassistant")
         }
     }
