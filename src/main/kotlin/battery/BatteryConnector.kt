@@ -4,10 +4,13 @@ import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import org.springframework.stereotype.Component
+import java.io.BufferedOutputStream
 import java.io.OutputStreamWriter
 import java.nio.charset.Charset
 import java.time.Duration
@@ -23,6 +26,7 @@ class BatteryConnector(private val dispatcher: CoroutineDispatcher) {
     private lateinit var outputStream: OutputStreamWriter
     private lateinit var exec: Session.Shell
 
+    private val mutex = Mutex()
 
     @PostConstruct
     fun init() {
@@ -76,39 +80,37 @@ class BatteryConnector(private val dispatcher: CoroutineDispatcher) {
     @OptIn(ExperimentalStdlibApi::class, ExperimentalUnsignedTypes::class)
     suspend fun sendRequest(deviceAddress: String, buffer: ByteArray, clean: Boolean = false): List<Int> {
         ensureOpenSession(deviceAddress)
-        val start = System.currentTimeMillis()
         var answer = ""
-        if (clean) {
+        mutex.withLock {
             while (exec.inputStream.available() > 0) {
                 scanner.nextLine()
             }
-        }
-
-        while ((System.currentTimeMillis() - start) < Duration.ofSeconds(5).toMillis() && answer.isEmpty()) {
-            outputStream.write(buffer.toHexString() + "\n")
+            outputStream.appendLine(buffer.toHexString())
             outputStream.flush()
-            delay(500)
-            while (exec.inputStream.available() > 0) {
-                var wholeLine = scanner.nextLine()
-                while (wholeLine.contains("a5")) {
-                    val next = wholeLine.indexOf("a5", 2)
-                    val line = if (next != -1) {
-                        wholeLine.take(next)
-                    } else {
-                        wholeLine
+            val start = System.currentTimeMillis()
+            while ((System.currentTimeMillis() - start) < Duration.ofSeconds(5).toMillis() && answer.isEmpty()) {
+                while (exec.inputStream.available() > 0) {
+                    var wholeLine = scanner.nextLine()
+                    while (wholeLine.contains("a5")) {
+                        val next = wholeLine.indexOf("a5", 2)
+                        val line = if (next != -1) {
+                            wholeLine.take(next)
+                        } else {
+                            wholeLine
+                        }
+                        wholeLine = if (next != -1) {
+                            wholeLine.substring(next)
+                        } else {
+                            ""
+                        }
+                        if (line.startsWith("a5") && !line.contains(buffer.toHexString())) {
+                            answer = line
+                            break
+                        }
                     }
-                    wholeLine = if (next != -1) {
-                        wholeLine.substring(next)
-                    } else {
-                        ""
-                    }
-                    if (line.startsWith("a5") && !line.contains(buffer.toHexString())) {
-                        answer = line
-                        break
-                    }
+                    delay(100)
                 }
             }
-            delay(1000)
         }
         return answer.hexToUByteArray().map { it.toInt() }
     }
@@ -124,9 +126,9 @@ class BatteryConnector(private val dispatcher: CoroutineDispatcher) {
             session = client.startSession()?.also {
                 it.allocateDefaultPTY()
                 exec = it.startShell()
-                outputStream = OutputStreamWriter(exec.outputStream)
-                outputStream.write(
-                    "/usr/bin/python /home/lukas/repositories/battery-manager/bluetooth-client-continuous.py $deviceAddress\n"
+                outputStream = OutputStreamWriter(BufferedOutputStream(exec.outputStream))
+                outputStream.appendLine(
+                    "/usr/bin/python /home/lukas/repositories/battery-manager/bluetooth-client-continuous.py $deviceAddress"
                 )
                 outputStream.flush()
                 scanner = Scanner(exec.inputStream)

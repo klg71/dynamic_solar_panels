@@ -213,8 +213,6 @@ class DalyDevice(
         publishMosState()
         publishHeating()
         publishConnected()
-
-        client.publish("${mqttRoot()}/last-update", LocalDateTime.now().format(formatter))
     }
 
     private fun publishHeating() {
@@ -257,6 +255,8 @@ class DalyDevice(
             client.publish("${mqttRoot()}/soc", soc)
             client.publish("${mqttRoot()}/total-current", current)
             client.publish("${mqttRoot()}/total-voltage", cumVoltage)
+
+            client.publish("${mqttRoot()}/last-update", LocalDateTime.now().format(formatter))
         }
     }
 
@@ -551,12 +551,12 @@ class DalyDevice(
             0x8201, 0x42C0, 0x4380, 0x8341, 0x4100, 0x81C1, 0x8081, 0x4040
         ).map { it.toUShort() }
 
-        var xorV: UShort = 0x00.toUShort();
+        var xorV: UByte = 0x00.toUByte();
         var crc: UInt = 0xFFFF.toUInt();
 
         repeat(len) {
 
-            xorV = (buffer[it].toUInt().xor(crc)).toUShort()
+            xorV = (buffer[it].toUByte().xor(crc.toUByte())).toUByte()
             crc = crc shr 8;
             crc = crc xor table[xorV.toInt()].toUInt();
         }
@@ -568,18 +568,20 @@ class DalyDevice(
         val buffer = UByteArray(8)
         buffer[0] = 0x81.toUByte()
         buffer[1] = 0x06.toUByte()
-        buffer[2] = (address shl 8).toUByte()
+        buffer[2] = (address shr 8).toUByte()
         buffer[3] = address.toUByte();
 
-        buffer[4] = (value shl 8).toUByte();
+        buffer[4] = (value shr 8).toUByte();
         buffer[5] = value.toUByte();
         val crc = MODBUS_CRC16(buffer, 6);
 
-        buffer[6] = (crc and 0xFF.toUInt()).toUByte();
-        buffer[7] = ((crc shr 8) and 0xFF.toUInt()).toUByte();
+        buffer[6] = ((crc shr 8) and 0xFF.toUInt()).toUByte();
+        buffer[7] = (crc and 0xFF.toUInt()).toUByte();
 
 
-        batteryConnector.sendRequest(deviceAddress, buffer.toByteArray())
+        batteryConnector.sendRequest(deviceAddress, buffer.toByteArray()).let {
+            println(it.map { it.toByte() }.toByteArray().toHexString())
+        }
     }
 
 

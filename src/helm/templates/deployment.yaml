@@ -48,3 +48,7 @@ spec:
               value: {{ .Release.Namespace }}
             - name: JAVA_OPTS
               value: -XX:MaxRAMPercentage=80.0
+            - name: TZ
+              value: Europe/Berlin
+            - name: SPRING_PROFILES_ACTIVE
+              value: k8s
