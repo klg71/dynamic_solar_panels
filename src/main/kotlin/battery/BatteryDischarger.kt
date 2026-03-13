@@ -12,9 +12,9 @@ import org.springframework.stereotype.Component
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 fun Boolean.toHaState() = if (this) {
-    "on"
+    "ON"
 } else {
-    "off"
+    "OFF"
 }
 
 fun fromHaState(state: String) = state.lowercase() == "on"
@@ -22,9 +22,7 @@ fun fromHaState(state: String) = state.lowercase() == "on"
 @OptIn(ExperimentalAtomicApi::class)
 @Component
 class BatteryDischarger(
-    private val batteryConnector: BatteryConnector,
     private val mqttClient: MqttClient,
-    private val dalyDevice: DalyDevice,
     private val dispatcher: CoroutineDispatcher,
     objectMapper: ObjectMapper
 ) {
@@ -52,7 +50,7 @@ class BatteryDischarger(
     private suspend fun watchSoc() {
         while (true) {
             try {
-                tick()
+                //tick()
             } catch (e: Throwable) {
                 logger.error("Error while watching battery soc", e)
             }
@@ -60,6 +58,7 @@ class BatteryDischarger(
         }
     }
 
+    /*
     private fun tick() {
         val currentState = batteryConnector.getPin(BATTERY_DISCHARGE_PIN)
         val desiredState = if (currentState) {
@@ -73,4 +72,5 @@ class BatteryDischarger(
             mqttPublisher.publish("/power", desiredState.toHaState())
         }
     }
+     */
 }

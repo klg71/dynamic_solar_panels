@@ -3,11 +3,9 @@ package de.klg71.solarman_sensor.battery
 import com.fasterxml.jackson.databind.ObjectMapper
 import de.klg71.solarman_sensor.getLogger
 import de.klg71.solarman_sensor.solarman.CRC16Modbus
-import jakarta.annotation.PostConstruct
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.eclipse.paho.client.mqttv3.MqttClient
 import org.eclipse.paho.client.mqttv3.MqttMessage
 import java.nio.ByteBuffer
@@ -22,24 +20,27 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalAtomicApi::class)
 class DalyDevice(
-    private val batteryConnector: BatteryConnector, private val dispatcher: CoroutineDispatcher,
+    dispatcher: CoroutineDispatcher,
     client: MqttClient,
     objectMapper: ObjectMapper,
     private val deviceAddress: String,
+    private val name: String,
+    private val mutex: Mutex,
     private val heatingPin: Int?
 ) {
+    private val batteryConnector: BatteryConnector = BatteryConnector(deviceAddress, mutex)
     private val logger = getLogger(DalyDevice::class.java)
     private var found = false
-    private lateinit var name: String
     private val numberOfTempSensors = 2
     private val shouldConnect = AtomicBoolean(true)
     private val currentSoc = AtomicReference<Double>(0.0)
-    private val mqttPublisher = MqttPublisher(client, "daly", name, objectMapper)
+    private val mqttPublisher = MqttPublisher(client, "daly", name.replace("-", "_"), objectMapper)
+    private val operationMutex= Mutex();
 
     private val scope = CoroutineScope(dispatcher)
 
-    @PostConstruct
     fun init() {
+        batteryConnector.init()
         scope.launch { watcher() }
         scope.launch { monitor() }
         mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "total-voltage", "totalVoltage")
@@ -62,6 +63,11 @@ class DalyDevice(
         mqttPublisher.subscribe("/heating/set", ::setHeating)
         mqttPublisher.homeAssistantDiscoverySwitch("connected", "connected/set", "connected")
         mqttPublisher.subscribe("/connected/set", ::setConnected)
+    }
+
+    fun tearDown() {
+        scope.cancel()
+        batteryConnector.disconnect()
     }
 
     private fun setDischargeMos(topic: String, message: MqttMessage) {
@@ -122,27 +128,29 @@ class DalyDevice(
     }
 
     private suspend fun sendRequest(address: Int): List<Int> {
-        val buffer = ByteArray(13)
-        buffer[0] = 0xA5.toByte()
-        buffer[1] = 0x40
-        buffer[2] = address.toByte()
-        buffer[3] = 0x08
-        for (i in 4..12) {
-            buffer[i] = 0x00
-        }
+        operationMutex.withLock {
+            val buffer = ByteArray(13)
+            buffer[0] = 0xA5.toByte()
+            buffer[1] = 0x40
+            buffer[2] = address.toByte()
+            buffer[3] = 0x08
+            for (i in 4..12) {
+                buffer[i] = 0x00
+            }
 
-        var checksum: Byte = 0
-        for (i in 0..11) {
-            checksum = ((checksum + buffer[i]) % 256).toByte()
-        }
+            var checksum: Byte = 0
+            for (i in 0..11) {
+                checksum = ((checksum + buffer[i]) % 256).toByte()
+            }
 
-        buffer[12] = checksum
-        var answer = batteryConnector.sendRequest(deviceAddress, buffer)
-        while (answer[2] != address) {
-            delay(1000)
-            answer = batteryConnector.sendRequest(deviceAddress, buffer, clean = true)
+            buffer[12] = checksum
+            var answer = batteryConnector.sendRequest(buffer)
+            while (answer.isEmpty() || answer[2] != address) {
+                delay(1000)
+                answer = batteryConnector.sendRequest(buffer, clean = true)
+            }
+            return answer
         }
-        return answer
     }
 
     private val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
@@ -280,7 +288,6 @@ class DalyDevice(
             try {
                 batteryConnector.devices().firstOrNull { it.address == deviceAddress }?.let {
                     found = true
-                    name = it.name
                 }
             } catch (e: Throwable) {
                 logger.error("Error while watching battery", e)
@@ -289,7 +296,33 @@ class DalyDevice(
         }
     }
 
+    private suspend fun unlock() {
+        val buffer = ByteBuffer.allocate(8)
+
+        buffer.put(0x81.toByte())
+        buffer.put(0x03.toByte())
+        buffer.put(0x01.toByte())
+        buffer.put(0x00.toByte())
+        buffer.put(0x00.toByte())
+        buffer.put(0x62.toByte())
+
+
+        CRC16Modbus().apply {
+            update(buffer.array(),0,6)
+        }.let {
+            buffer.put(6, it.crcBytes[0])
+            buffer.put(7, it.crcBytes[1])
+        }
+
+        batteryConnector.sendRequest(buffer.array(), clean = true).let {
+            println(it.map { it.toByte() }.toByteArray().toHexString())
+        }
+    }
+
     private suspend fun setCommand06(address: Int, value: Int) {
+        operationMutex.withLock {
+
+        unlock()
         val buffer = ByteBuffer.allocate(8)
 
         buffer.put(0x81.toByte())
@@ -302,11 +335,13 @@ class DalyDevice(
         buffer.put(value.toByte())
         CRC16Modbus().let {
             it.update(buffer)
-            buffer.put(it.crcBytes)
+            buffer.put(6, it.crcBytes[0])
+            buffer.put(7, it.crcBytes[0])
         }
 
-        batteryConnector.sendRequest(deviceAddress, buffer.array()).let {
+        batteryConnector.sendRequest(buffer.array()).let {
             println(it.map { it.toByte() }.toByteArray().toHexString())
+        }
         }
     }
 

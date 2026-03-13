@@ -12,7 +12,6 @@ internal class AppConfiguration {
     fun dispatcher() = Dispatchers.Default
 
     @Bean
-    //fun mqttClient()= MqttClient("tcp://mosquitto-local:1883","dynamic-solar-panels").also { it.connect() }
     fun mqttClient(@Value("\${mqtt.host}") host: String) =
         MqttClient("tcp://$host:1883", "dynamic-solar-panels")
             .also { it.connect() }

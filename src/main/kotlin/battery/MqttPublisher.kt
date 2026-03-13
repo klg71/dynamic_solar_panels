@@ -29,7 +29,7 @@ class MqttPublisher(
             "state_topic" to "${mqttRoot()}/$stateTopic",
             "state_class" to "measurement",
             "value_template" to "{{ value }}",
-            "unique_id" to "daly_bat_${uniqueId}",
+            "unique_id" to "${name}_${uniqueId}",
             "device" to device(),
             "platform" to "mqtt"
         ) + unit + deviceClass).let {
@@ -42,7 +42,7 @@ class MqttPublisher(
             "name" to "Daly-${name}-$uniqueId",
             "state_topic" to "${mqttRoot()}/$stateTopic",
             "command_topic" to "${mqttRoot()}/$commandTopic",
-            "unique_id" to "daly_bat_${uniqueId}",
+            "unique_id" to "_${uniqueId}",
             "device" to device(),
             "platform" to "switch"
         ).let {
