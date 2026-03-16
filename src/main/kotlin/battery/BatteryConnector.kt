@@ -122,9 +122,11 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
                 )
                 outputStream.flush()
                 scanner = Scanner(exec.inputStream)
-                delay(500)
-                while (exec.inputStream.available() != 0) {
-                    scanner.nextLine()
+                while (true) {
+                    if(scanner.nextLine()=="Connected"){
+                        return
+                    }
+                    delay(500)
                 }
             }
         }

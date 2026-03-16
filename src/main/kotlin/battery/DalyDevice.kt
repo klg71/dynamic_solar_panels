@@ -3,6 +3,7 @@ package de.klg71.solarman_sensor.battery
 import com.fasterxml.jackson.databind.ObjectMapper
 import de.klg71.solarman_sensor.getLogger
 import de.klg71.solarman_sensor.solarman.CRC16Modbus
+import io.github.davidepianca98.fromHexString
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -35,7 +36,7 @@ class DalyDevice(
     private val shouldConnect = AtomicBoolean(true)
     private val currentSoc = AtomicReference<Double>(0.0)
     private val mqttPublisher = MqttPublisher(client, "daly", name.replace("-", "_"), objectMapper)
-    private val operationMutex= Mutex();
+    private val operationMutex = Mutex();
 
     private val scope = CoroutineScope(dispatcher)
 
@@ -45,6 +46,8 @@ class DalyDevice(
         scope.launch { monitor() }
         mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "total-voltage", "totalVoltage")
         mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "total-current", "totalCurrent")
+        mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "balance-current", "balanceCurrent")
+        mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "balance-pressure", "balancePressure")
         mqttPublisher.homeAssistantDiscovery(Measurement.PERCENTAGE, "soc", "soc")
         mqttPublisher.homeAssistantDiscovery(Measurement.TEMPERATURE, "temperature_0", "temperature_1")
         mqttPublisher.homeAssistantDiscovery(Measurement.TEMPERATURE, "temperature_1", "temperature_2")
@@ -53,14 +56,20 @@ class DalyDevice(
         mqttPublisher.homeAssistantDiscovery(Measurement.STRING, "state", "state")
         mqttPublisher.homeAssistantDiscovery(Measurement.STRING, "errors", "errors")
         mqttPublisher.homeAssistantDiscovery(Measurement.STRING, "last-update", "lastUpdate")
-        mqttPublisher.homeAssistantDiscoverySwitch("charge-mos", "charge-mos/set", "chargeMos")
-        mqttPublisher.subscribe("/charge-mos/set", ::setChargeMos)
-        mqttPublisher.homeAssistantDiscoverySwitch("discharge-mos", "discharge-mos/set", "dischargeMos")
+        mqttPublisher.homeAssistantDiscovery(Measurement.STRING, "password", "password")
 
-        mqttPublisher.subscribe("/discharge-mos/set", ::setDischargeMos)
+        mqttPublisher.homeAssistantDiscovery(Measurement.BINARY_POWER, "charge-mos-total", "chargeMosTotal")
+        mqttPublisher.homeAssistantDiscovery(Measurement.BINARY_POWER, "discharge-mos-total", "dischargeMosTotal")
+
+        mqttPublisher.homeAssistantDiscoverySwitch("charge-mos-control", "charge-mos-control/set", "chargeMos")
+        mqttPublisher.subscribe("/charge-mos-control/set", ::setChargeMos)
+
+        mqttPublisher.homeAssistantDiscoverySwitch("discharge-mos-control", "discharge-mos-control/set", "dischargeMos")
+        mqttPublisher.subscribe("/discharge-mos-control/set", ::setDischargeMos)
 
         mqttPublisher.homeAssistantDiscoverySwitch("heating", "heating/set", "heating")
         mqttPublisher.subscribe("/heating/set", ::setHeating)
+
         mqttPublisher.homeAssistantDiscoverySwitch("connected", "connected/set", "connected")
         mqttPublisher.subscribe("/connected/set", ::setConnected)
     }
@@ -153,6 +162,19 @@ class DalyDevice(
         }
     }
 
+    private suspend fun getSettingData(): List<Int> {
+        operationMutex.withLock {
+            "810301000062da1f".fromHexString().let {
+                var answer = batteryConnector.sendRequest(it)
+                while (answer.isEmpty()) {
+                    delay(1000)
+                    answer = batteryConnector.sendRequest(it, clean = true)
+                }
+                return answer
+            }
+        }
+    }
+
     private val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 
     private suspend fun publishInfo() {
@@ -161,6 +183,7 @@ class DalyDevice(
         publishTemp()
         publishMinMaxCellVoltage()
         publishMosState()
+        publishControlMosState()
         publishHeating()
         publishConnected()
     }
@@ -204,6 +227,28 @@ class DalyDevice(
         }
     }
 
+    private suspend fun publishControlMosState() {
+        getSettingData().let {
+            if (it.isEmpty()) {
+                return
+            }
+            if (it[0] != 0x51) {
+                return
+            }
+
+            val chargeMos = (it[0x21 * 2 + 4] == 1).toHaState()
+            val dischargeMos = (it[0x22 * 2 + 4] == 1).toHaState()
+            mqttPublisher.publish("/charge-mos-control", chargeMos, true)
+            mqttPublisher.publish("/discharge-mos-control", dischargeMos, true)
+            val balanceCurrent=(it[0x1c * 2 +3]*256+it[0x1c*2+4])
+            mqttPublisher.publish("/balance-current", balanceCurrent)
+            val balancePressure=(it[0x1b * 2 +3]*256+it[0x1b*2+4])
+            mqttPublisher.publish("/balance-pressure", balancePressure)
+            //password bits=39,40,41
+
+        }
+    }
+
     private suspend fun publishMosState() {
         sendRequest(0x93).let {
             if (it.isEmpty()) {
@@ -218,11 +263,14 @@ class DalyDevice(
                 2 -> "Discharge"
                 else -> ""
             }
+
+            // OFF
             val chargeMos = (it[5] == 1).toHaState()
+            // ON
             val dischargeMos = (it[6] == 1).toHaState()
             mqttPublisher.publish("/state", state)
-            mqttPublisher.publish("/charge-mos", chargeMos, true)
-            mqttPublisher.publish("/discharge-mos", dischargeMos, true)
+            mqttPublisher.publish("/charge-mos-total", chargeMos, true)
+            mqttPublisher.publish("/discharge-mos-total", dischargeMos, true)
         }
     }
 
@@ -308,7 +356,7 @@ class DalyDevice(
 
 
         CRC16Modbus().apply {
-            update(buffer.array(),0,6)
+            update(buffer.array(), 0, 6)
         }.let {
             buffer.put(6, it.crcBytes[0])
             buffer.put(7, it.crcBytes[1])
@@ -322,26 +370,26 @@ class DalyDevice(
     private suspend fun setCommand06(address: Int, value: Int) {
         operationMutex.withLock {
 
-        unlock()
-        val buffer = ByteBuffer.allocate(8)
+            unlock()
+            val buffer = ByteBuffer.allocate(8)
 
-        buffer.put(0x81.toByte())
-        buffer.put(0x06.toByte())
-        buffer.put((address shr 8).toByte())
-        buffer.put(address.toByte())
+            buffer.put(0x81.toByte())
+            buffer.put(0x06.toByte())
+            buffer.put((address shr 8).toByte())
+            buffer.put(address.toByte())
 
 
-        buffer.put((value shr 8).toByte())
-        buffer.put(value.toByte())
-        CRC16Modbus().let {
-            it.update(buffer)
-            buffer.put(6, it.crcBytes[0])
-            buffer.put(7, it.crcBytes[0])
-        }
+            buffer.put((value shr 8).toByte())
+            buffer.put(value.toByte())
+            CRC16Modbus().let {
+                it.update(buffer)
+                buffer.put(6, it.crcBytes[0])
+                buffer.put(7, it.crcBytes[0])
+            }
 
-        batteryConnector.sendRequest(buffer.array()).let {
-            println(it.map { it.toByte() }.toByteArray().toHexString())
-        }
+            batteryConnector.sendRequest(buffer.array()).let {
+                println(it.map { it.toByte() }.toByteArray().toHexString())
+            }
         }
     }
 
