@@ -5,9 +5,13 @@ import de.klg71.solarman_sensor.getLogger
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
+import net.schmizz.sshj.SSHClient
+import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import org.eclipse.paho.client.mqttv3.MqttClient
 import org.springframework.stereotype.Component
+import java.util.concurrent.TimeUnit
 
 data class DalyDeviceInfo(val address: String, val heatingPin: Int? = null)
 
@@ -22,30 +26,48 @@ class DalyDiscovery(
     private val logger = getLogger(DalyDiscovery::class.java)
     private val mutex = Mutex()
 
+
+    suspend fun reset() {
+        val session = SSHClient().also { client ->
+            client.addHostKeyVerifier(PromiscuousVerifier())
+            client.connect("garage-pi")
+            client.authPassword("lukas", "1805Rh")
+        }.startSession()
+
+        val cmd = session.exec("/bin/bash /home/lukas/bluetooth_reset.sh")
+        cmd.join(10, TimeUnit.SECONDS)
+        session.close()
+        logger.info("Resetted Bluetooth")
+    }
+
     @PostConstruct
     fun init() {
         val batteryConnector = BatteryConnector("", mutex)
-        batteryConnector.init()
-        batteryConnector.devices().filter {
-            it.name.startsWith("JHB-")
-        }.forEach {
-            logger.info("Starting to monitor device: ${it.name}")
-            deviceMap[it.address] =
-                DalyDevice(
-                    dispatcher,
-                    client,
-                    objectMapper,
-                    it.address,
-                    it.name.replace("-", "_"),
-                    mutex,
-                    heatingPins[it.address]
-                ).also {
-                    it.init()
-                }
+        runBlocking {
+            reset()
+            batteryConnector.init()
+            batteryConnector.devices().filter {
+                it.name.startsWith("JHB-")
+            }.forEach {
+                logger.info("Starting to monitor device: ${it.name}")
+                deviceMap[it.address] =
+                    DalyDevice(
+                        dispatcher,
+                        client,
+                        objectMapper,
+                        it.address,
+                        it.name.replace("-", "_"),
+                        mutex,
+                        heatingPins[it.address]
+                    ).also {
+                        it.init()
+                    }
+            }
         }
     }
+
     @PreDestroy
-    fun tearDown(){
-        deviceMap.forEach { (_, device) ->device.tearDown() }
+    fun tearDown() {
+        deviceMap.forEach { (_, device) -> device.tearDown() }
     }
 }

@@ -41,13 +41,15 @@ class DalyDevice(
     private val scope = CoroutineScope(dispatcher)
 
     fun init() {
-        batteryConnector.init()
+        runBlocking {
+            batteryConnector.init()
+        }
         scope.launch { watcher() }
         scope.launch { monitor() }
         mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "total-voltage", "totalVoltage")
         mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "total-current", "totalCurrent")
         mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "balance-current", "balanceCurrent")
-        mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "balance-pressure", "balancePressure")
+        mqttPublisher.homeAssistantDiscovery(Measurement.NUMBER, "cycle-number", "cycleNumber")
         mqttPublisher.homeAssistantDiscovery(Measurement.PERCENTAGE, "soc", "soc")
         mqttPublisher.homeAssistantDiscovery(Measurement.TEMPERATURE, "temperature_0", "temperature_1")
         mqttPublisher.homeAssistantDiscovery(Measurement.TEMPERATURE, "temperature_1", "temperature_2")
@@ -87,6 +89,7 @@ class DalyDevice(
                 } else {
                     setCommand06(0x0122, 0)
                 }
+                publishControlMosState()
             }
         }
     }
@@ -99,6 +102,7 @@ class DalyDevice(
                 } else {
                     setCommand06(0x0121, 0)
                 }
+                publishControlMosState()
             }
         }
     }
@@ -154,7 +158,7 @@ class DalyDevice(
 
             buffer[12] = checksum
             var answer = batteryConnector.sendRequest(buffer)
-            while (answer.isEmpty() || answer[2] != address) {
+            if (answer.isEmpty() || answer[2] != address) {
                 delay(1000)
                 answer = batteryConnector.sendRequest(buffer, clean = true)
             }
@@ -174,6 +178,18 @@ class DalyDevice(
             }
         }
     }
+    private suspend fun getRealTimeDataLast(): List<Int> {
+        operationMutex.withLock {
+            "81030041003e8bce".fromHexString().let {
+                var answer = batteryConnector.sendRequest(it)
+                while (answer.isEmpty()) {
+                    delay(1000)
+                    answer = batteryConnector.sendRequest(it, clean = true)
+                }
+                return answer
+            }
+        }
+    }
 
     private val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 
@@ -184,6 +200,7 @@ class DalyDevice(
         publishMinMaxCellVoltage()
         publishMosState()
         publishControlMosState()
+        publishRealTimeDataLast()
         publishHeating()
         publishConnected()
     }
@@ -240,12 +257,28 @@ class DalyDevice(
             val dischargeMos = (it[0x22 * 2 + 4] == 1).toHaState()
             mqttPublisher.publish("/charge-mos-control", chargeMos, true)
             mqttPublisher.publish("/discharge-mos-control", dischargeMos, true)
-            val balanceCurrent=(it[0x1c * 2 +3]*256+it[0x1c*2+4])
-            mqttPublisher.publish("/balance-current", balanceCurrent)
-            val balancePressure=(it[0x1b * 2 +3]*256+it[0x1b*2+4])
-            mqttPublisher.publish("/balance-pressure", balancePressure)
-            //password bits=39,40,41
 
+            val password = listOf(38, 39, 40).flatMap { listOf(it * 2 + 3, it * 2 + 4) }.map { index ->
+                it[index].toByte()
+            }.toByteArray().toString(Charsets.US_ASCII)
+            mqttPublisher.publish("/password", password)
+
+        }
+    }
+    private suspend fun publishRealTimeDataLast() {
+        getRealTimeDataLast().let {
+            if (it.isEmpty()) {
+                return
+            }
+            if (it[0] != 0x51) {
+                return
+            }
+
+            val cycleNumber = (it[0xb * 2 + 3] * 256 + it[0xb * 2 + 4])
+            mqttPublisher.publish("/cycle-number", cycleNumber)
+
+            val balanceCurrent = ((it[0xd * 2 + 3] * 256 + it[0xd * 2 + 4])-30000)/1000.0
+            mqttPublisher.publish("/balance-current", balanceCurrent)
         }
     }
 
@@ -344,33 +377,9 @@ class DalyDevice(
         }
     }
 
-    private suspend fun unlock() {
-        val buffer = ByteBuffer.allocate(8)
-
-        buffer.put(0x81.toByte())
-        buffer.put(0x03.toByte())
-        buffer.put(0x01.toByte())
-        buffer.put(0x00.toByte())
-        buffer.put(0x00.toByte())
-        buffer.put(0x62.toByte())
-
-
-        CRC16Modbus().apply {
-            update(buffer.array(), 0, 6)
-        }.let {
-            buffer.put(6, it.crcBytes[0])
-            buffer.put(7, it.crcBytes[1])
-        }
-
-        batteryConnector.sendRequest(buffer.array(), clean = true).let {
-            println(it.map { it.toByte() }.toByteArray().toHexString())
-        }
-    }
-
     private suspend fun setCommand06(address: Int, value: Int) {
         operationMutex.withLock {
 
-            unlock()
             val buffer = ByteBuffer.allocate(8)
 
             buffer.put(0x81.toByte())
@@ -381,10 +390,11 @@ class DalyDevice(
 
             buffer.put((value shr 8).toByte())
             buffer.put(value.toByte())
-            CRC16Modbus().let {
-                it.update(buffer)
+            CRC16Modbus().apply {
+                update(buffer.array(), 0, 6)
+            }.let {
                 buffer.put(6, it.crcBytes[0])
-                buffer.put(7, it.crcBytes[0])
+                buffer.put(7, it.crcBytes[1])
             }
 
             batteryConnector.sendRequest(buffer.array()).let {
@@ -394,6 +404,4 @@ class DalyDevice(
     }
 
     fun currentSoc(): Double = currentSoc.load()
-
-
 }

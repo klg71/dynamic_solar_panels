@@ -9,47 +9,57 @@ class MqttPublisher(
     private val objectMapper: ObjectMapper
 ) {
 
-    private fun mqttRoot()="$mqttRootPrefix/$name"
+    private fun mqttRoot() = "$mqttRootPrefix/$name"
 
     fun homeAssistantDiscovery(measurement: Measurement, stateTopic: String, uniqueId: String) {
-        val unit = if (measurement.unit.isNotBlank()) {
-            mapOf(
-                "unit_of_measurement" to measurement.unit,
-            )
-        } else {
-            emptyMap()
-        }
-        val deviceClass = if (measurement.deviceClass.isNotBlank()) {
-            mapOf("device_class" to measurement.deviceClass)
-        } else {
-            emptyMap()
-        }
-        (mapOf(
-            "name" to "Daly-${name}-$uniqueId",
-            "state_topic" to "${mqttRoot()}/$stateTopic",
-            "state_class" to "measurement",
-            "value_template" to "{{ value }}",
-            "unique_id" to "${name}_${uniqueId}",
-            "device" to device(),
-            "platform" to "mqtt"
-        ) + unit + deviceClass).let {
-            client.publish("homeassistant/sensor/daly_${name}_$uniqueId/config", it)
+        buildMap {
+            put("name", stateTopic)
+            put("state_topic", "${mqttRoot()}/$stateTopic")
+            if (measurement.isMeasurement) {
+                put("state_class", "measurement")
+            }
+            if (measurement.unit.isNotBlank()) {
+                put("unit_of_measurement", measurement.unit)
+            }
+            if (measurement.deviceClass.isNotBlank()) {
+                put("device_class", measurement.deviceClass)
+            }
+            measurement.payloadOn?.let {
+                put("payload_on", it)
+            }
+            measurement.payloadOff?.let {
+                put("payload_off", it)
+            }
+            measurement.precision?.let {
+                put("suggested_display_precision", it)
+            }
+            put("value_template", "{{ value }}")
+            put("unique_id", "${name}_${uniqueId}")
+            put("device", device())
+            put("platform", "mqtt")
+        }.let {
+            if (measurement.isBinary) {
+                client.publish("homeassistant/binary_sensor/daly_${name}_$uniqueId/config", it)
+            } else {
+                client.publish("homeassistant/sensor/daly_${name}_$uniqueId/config", it)
+            }
         }
     }
 
     fun homeAssistantDiscoverySwitch(stateTopic: String, commandTopic: String, uniqueId: String) {
         mapOf(
-            "name" to "Daly-${name}-$uniqueId",
+            "name" to stateTopic,
             "state_topic" to "${mqttRoot()}/$stateTopic",
             "command_topic" to "${mqttRoot()}/$commandTopic",
-            "unique_id" to "_${uniqueId}",
+            "unique_id" to "${name}_${uniqueId}",
             "device" to device(),
             "platform" to "switch"
         ).let {
             client.publish("homeassistant/switch/daly_${name}_$uniqueId/config", it)
         }
     }
-    fun subscribe(topic:String,callback:(String, MqttMessage)->Unit){
+
+    fun subscribe(topic: String, callback: (String, MqttMessage) -> Unit) {
         client.subscribe("${mqttRoot()}$topic", callback)
     }
 

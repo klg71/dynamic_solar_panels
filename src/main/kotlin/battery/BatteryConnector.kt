@@ -1,6 +1,5 @@
 package de.klg71.solarman_sensor.battery
 
-import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -22,26 +21,24 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
     private lateinit var outputStream: OutputStreamWriter
     private lateinit var exec: Session.Shell
 
-
-    @PostConstruct
-    fun init() {
+    suspend fun init() {
         client.addHostKeyVerifier(PromiscuousVerifier())
         client.connect("garage-pi")
         client.authPassword("lukas", "1805Rh")
-
     }
 
 
-    fun devices(): List<BtDevice> {
+    suspend fun devices(): List<BtDevice> {
         val session = client.startSession()
         val cmd = session.exec("/usr/bin/python /home/lukas/repositories/battery-manager/device-scanner.py")
         cmd.join(10, TimeUnit.SECONDS)
         val devices =
-            cmd.inputStream.readAllBytes().toString(Charset.defaultCharset()).lines().filterNot { it.isBlank() }.map {
-                it.split("\t").let { split ->
-                    BtDevice(split[0], split[1])
+            cmd.inputStream.readAllBytes().toString(Charset.defaultCharset()).lines().filterNot { it.isBlank() }
+                .map {
+                    it.split("\t").let { split ->
+                        BtDevice(split[0], split[1])
+                    }
                 }
-            }
         session.close()
         return devices
     }
@@ -69,8 +66,8 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
 
     @OptIn(ExperimentalStdlibApi::class, ExperimentalUnsignedTypes::class)
     suspend fun sendRequest(buffer: ByteArray, clean: Boolean = false): List<Int> {
-        var answer = ""
         mutex.withLock {
+            var answer = ""
             ensureOpenSession(deviceAddress)
             while (exec.inputStream.available() > 0) {
                 scanner.nextLine()
@@ -78,31 +75,18 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
             outputStream.appendLine(buffer.toHexString())
             outputStream.flush()
             val start = System.currentTimeMillis()
-            while ((System.currentTimeMillis() - start) < Duration.ofSeconds(500).toMillis() && answer.isEmpty()) {
+            while ((System.currentTimeMillis() - start) < Duration.ofSeconds(5).toMillis() && answer.isEmpty()) {
                 while (exec.inputStream.available() > 0) {
-                    var wholeLine = scanner.nextLine()
-                    while (wholeLine.contains("a5")) {
-                        val next = wholeLine.indexOf("a5", 2)
-                        val line = if (next != -1) {
-                            wholeLine.take(next)
-                        } else {
-                            wholeLine
-                        }
-                        wholeLine = if (next != -1) {
-                            wholeLine.substring(next)
-                        } else {
-                            ""
-                        }
-                        if (line.startsWith("a5") && !line.contains(buffer.toHexString())) {
-                            answer = line
-                            break
-                        }
+                    val line = scanner.nextLine()
+                    if ((line.startsWith("a5") || line.startsWith("51")) && !line.contains(buffer.toHexString())) {
+                        answer = line
+                        break
                     }
                     delay(100)
                 }
             }
+            return answer.hexToUByteArray().map { it.toInt() }
         }
-        return answer.hexToUByteArray().map { it.toInt() }
     }
 
     private suspend fun ensureOpenSession(deviceAddress: String) {
@@ -123,8 +107,9 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
                 outputStream.flush()
                 scanner = Scanner(exec.inputStream)
                 while (true) {
-                    if(scanner.nextLine()=="Connected"){
-                        return
+                    val line = scanner.nextLine()
+                    if (line == "Connected") {
+                        break
                     }
                     delay(500)
                 }
@@ -137,9 +122,11 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
         client.disconnect()
         disconnectBluetooth()
     }
+
     private fun disconnectBluetooth() {
         val session = client.startSession()
-        val cmd = session.exec("/usr/bin/python /home/lukas/repositories/battery-manager/bluetooth-client-disconnect.py $deviceAddress")
+        val cmd =
+            session.exec("/usr/bin/python /home/lukas/repositories/battery-manager/bluetooth-client-disconnect.py $deviceAddress")
         cmd.join(10, TimeUnit.SECONDS)
         session.close()
     }
