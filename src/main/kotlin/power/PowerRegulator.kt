@@ -1,8 +1,11 @@
 package de.klg71.solarman_sensor.power
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import de.klg71.solarman_sensor.battery.Measurement
+import de.klg71.solarman_sensor.battery.MqttPublisher
 import de.klg71.solarman_sensor.getLogger
 import de.klg71.solarman_sensor.solarman.SolarCommunicator
+import de.klg71.solarman_sensor.solarman.SolarInfo
 import feign.Feign
 import feign.jackson.JacksonDecoder
 import feign.jackson.JacksonEncoder
@@ -11,14 +14,19 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.eclipse.paho.client.mqttv3.MqttClient
 import org.springframework.stereotype.Service
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 @Service
-internal class PowerRegulator(private val objectMapper: ObjectMapper, private val dispatcher: CoroutineDispatcher,
-    private val solarCommunicator: SolarCommunicator) {
+internal class PowerRegulator(
+    private val objectMapper: ObjectMapper, private val dispatcher: CoroutineDispatcher,
+    private val solarCommunicator: SolarCommunicator,
+    private val mqttClient: MqttClient
+) {
     private lateinit var smartMeterClient: BitshakeClient
+    private val mqttPublisher = MqttPublisher(mqttClient, "solar_inverter", "solar_inverter", objectMapper)
 
     private val scope = CoroutineScope(dispatcher)
     private val logger = getLogger(PowerRegulator::class.java)
@@ -30,6 +38,27 @@ internal class PowerRegulator(private val objectMapper: ObjectMapper, private va
     @OptIn(ExperimentalAtomicApi::class)
     @PostConstruct
     fun init() {
+        mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "mppt1-voltage", "mppt1-voltage")
+        mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "mppt1-current", "mppt1-current")
+        mqttPublisher.homeAssistantDiscovery(Measurement.POWER, "mppt1-power", "mppt1-power")
+
+        mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "mppt2-voltage", "mppt2-voltage")
+        mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "mppt2-current", "mppt2-current")
+        mqttPublisher.homeAssistantDiscovery(Measurement.POWER, "mppt2-power", "mppt2-power")
+
+        mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "mppt3-voltage", "mppt3-voltage")
+        mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "mppt3-current", "mppt3-current")
+        mqttPublisher.homeAssistantDiscovery(Measurement.POWER, "mppt3-power", "mppt3-power")
+
+        mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "mppt4-voltage", "mppt4-voltage")
+        mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "mppt4-current", "mppt4-current")
+        mqttPublisher.homeAssistantDiscovery(Measurement.POWER, "mppt4-power", "mppt4-power")
+
+        mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "ac-voltage", "ac-voltage")
+        mqttPublisher.homeAssistantDiscovery(Measurement.ENERGY, "daily-production", "daily-production")
+        mqttPublisher.homeAssistantDiscovery(Measurement.POWER, "total-power", "total-power")
+        mqttPublisher.homeAssistantDiscovery(Measurement.POWER, "set-power", "set-power")
+
         smartMeterClient = Feign.Builder().run {
             decoder(JacksonDecoder(objectMapper))
             encoder(JacksonEncoder(objectMapper))
@@ -48,10 +77,28 @@ internal class PowerRegulator(private val objectMapper: ObjectMapper, private va
         while (true) {
             try {
                 controlPower()
+                publishInfo()
             } catch (e: Throwable) {
                 logger.error("Error while controlling power", e)
             }
             delay(500)
+        }
+    }
+
+    private suspend fun publishInfo() {
+        solarCommunicator.readSolarInfo()?.let {
+            publish(it)
+        }
+    }
+
+    private fun publish(solarInfo: SolarInfo) {
+        mqttPublisher.publish("/total-power", solarInfo.totalPower)
+        mqttPublisher.publish("/ac-voltage", solarInfo.acVoltage)
+        mqttPublisher.publish("/daily-production", solarInfo.dailyProduction)
+        solarInfo.strings.forEach {
+            mqttPublisher.publish("/mppt${it.id + 1}-voltage", it.voltage)
+            mqttPublisher.publish("/mppt${it.id + 1}-current", it.current)
+            mqttPublisher.publish("/mppt${it.id + 1}-power", it.voltage * it.current)
         }
     }
 
@@ -67,6 +114,7 @@ internal class PowerRegulator(private val objectMapper: ObjectMapper, private va
                 }
 
                 solarCommunicator.setPower(newPower)
+                mqttPublisher.publish("/set-power", newPower)
                 currentSetPower.store(newPower)
                 delay(10000)
                 logger.info("Decreased to: {}", newPower)
@@ -77,6 +125,7 @@ internal class PowerRegulator(private val objectMapper: ObjectMapper, private va
                     limitPower(it)
                 }
                 solarCommunicator.setPower(newPower)
+                mqttPublisher.publish("/set-power", newPower)
                 currentSetPower.store(newPower)
                 logger.info("Increased to: {}", newPower)
                 delay(10000)
