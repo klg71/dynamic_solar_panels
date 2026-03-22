@@ -26,13 +26,12 @@ class DalyDevice(
     client: MqttClient,
     objectMapper: ObjectMapper,
     private val deviceAddress: String,
-    private val name: String,
+    public val name: String,
     private val mutex: Mutex,
     private val heatingPin: Int?
 ) {
     private val batteryConnector: BatteryConnector = BatteryConnector(deviceAddress, mutex)
     private val logger = getLogger(DalyDevice::class.java)
-    private var found = false
     private val numberOfTempSensors = 2
     private val shouldConnect = AtomicBoolean(true)
     private val currentSoc = AtomicReference<Double>(0.0)
@@ -46,7 +45,6 @@ class DalyDevice(
         runBlocking {
             batteryConnector.init()
         }
-        scope.launch { watcher() }
         scope.launch { monitor() }
         mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "total-voltage", "totalVoltage")
         mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "total-current", "totalCurrent")
@@ -132,7 +130,7 @@ class DalyDevice(
     private suspend fun monitor() {
         while (true) {
             try {
-                if (found && shouldConnect.load()) {
+                if (shouldConnect.load()) {
                     publishInfo()
                 }
             } catch (e: Throwable) {
@@ -239,7 +237,7 @@ class DalyDevice(
             val current = (it[8] * 256 + it[9]) * 0.1 - 3000
             val soc = (it[10] * 256 + it[11]) * 0.1
             mqttPublisher.publish("/soc", soc)
-            currentSoc.store(current)
+            currentSoc.store(soc)
             mqttPublisher.publish("/total-current", current)
             mqttPublisher.publish("/total-voltage", cumVoltage)
 
@@ -368,20 +366,6 @@ class DalyDevice(
             }
         }
 
-    }
-
-
-    suspend fun watcher() {
-        while (true) {
-            try {
-                batteryConnector.devices().firstOrNull { it.address == deviceAddress }?.let {
-                    found = true
-                }
-            } catch (e: Throwable) {
-                logger.error("Error while watching battery", e)
-            }
-            delay(Duration.ofMinutes(2).toMillis())
-        }
     }
 
     private suspend fun setCommand06(address: Int, value: Int) {

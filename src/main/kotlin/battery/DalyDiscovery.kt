@@ -11,6 +11,7 @@ import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import org.eclipse.paho.client.mqttv3.MqttClient
 import org.springframework.stereotype.Component
 import java.time.Duration
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 data class DalyDeviceInfo(val address: String, val heatingPin: Int? = null)
@@ -22,12 +23,12 @@ class DalyDiscovery(
     private val client: MqttClient
 ) {
     private val heatingPins = mapOf<String, Int>()
-    private val deviceMap = mutableMapOf<String, DalyDevice>()
+    private val deviceMap = ConcurrentHashMap<String, DalyDevice>()
     private val logger = getLogger(DalyDiscovery::class.java)
     private val mutex = Mutex()
     private val scope = CoroutineScope(dispatcher)
 
-    public fun socAverage() = deviceMap.values.map { it.currentSoc() }.average().toInt()
+    fun socAverage() = deviceMap.values.map { it.currentSoc() }.average().toInt()
 
 
     suspend fun reset() {
@@ -71,13 +72,14 @@ class DalyDiscovery(
             it.name.startsWith("JHB-")
         }.forEach {
             logger.info("Starting to monitor device: ${it.name}")
-            if (it.address !in deviceMap) {
+            if (!deviceMap.containsKey(it.address)) {
                 deviceMap[it.address] = initDaly(it)
             }
         }
         deviceMap.forEach { (address, device) ->
             if ((System.currentTimeMillis() - device.getLastUpdated()) > Duration.ofMinutes(5).toMillis()) {
                 deviceMap.remove(address)
+                logger.info("Removing device ${device.name} because it was not updated.")
             }
         }
     }
