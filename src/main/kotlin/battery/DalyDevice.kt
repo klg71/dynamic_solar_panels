@@ -15,6 +15,7 @@ import java.time.Duration
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
@@ -37,6 +38,7 @@ class DalyDevice(
     private val currentSoc = AtomicReference<Double>(0.0)
     private val mqttPublisher = MqttPublisher(client, "daly", name.replace("-", "_"), objectMapper)
     private val operationMutex = Mutex();
+    private val lastUpdated = AtomicLong(System.currentTimeMillis())
 
     private val scope = CoroutineScope(dispatcher)
 
@@ -178,6 +180,7 @@ class DalyDevice(
             }
         }
     }
+
     private suspend fun getRealTimeDataLast(): List<Int> {
         operationMutex.withLock {
             "81030041003e8bce".fromHexString().let {
@@ -241,8 +244,11 @@ class DalyDevice(
             mqttPublisher.publish("/total-voltage", cumVoltage)
 
             mqttPublisher.publish("/last-update", LocalDateTime.now().format(formatter))
+            lastUpdated.store(System.currentTimeMillis())
         }
     }
+
+    public fun getLastUpdated() = lastUpdated.load()
 
     private suspend fun publishControlMosState() {
         getSettingData().let {
@@ -265,6 +271,7 @@ class DalyDevice(
 
         }
     }
+
     private suspend fun publishRealTimeDataLast() {
         getRealTimeDataLast().let {
             if (it.isEmpty()) {
@@ -277,7 +284,7 @@ class DalyDevice(
             val cycleNumber = (it[0xb * 2 + 3] * 256 + it[0xb * 2 + 4])
             mqttPublisher.publish("/cycle-number", cycleNumber)
 
-            val balanceCurrent = ((it[0xd * 2 + 3] * 256 + it[0xd * 2 + 4])-30000)/1000.0
+            val balanceCurrent = ((it[0xd * 2 + 3] * 256 + it[0xd * 2 + 4]) - 30000) / 1000.0
             mqttPublisher.publish("/balance-current", balanceCurrent)
         }
     }

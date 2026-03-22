@@ -4,13 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import de.klg71.solarman_sensor.getLogger
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import org.eclipse.paho.client.mqttv3.MqttClient
 import org.springframework.stereotype.Component
+import java.time.Duration
 import java.util.concurrent.TimeUnit
 
 data class DalyDeviceInfo(val address: String, val heatingPin: Int? = null)
@@ -25,6 +25,9 @@ class DalyDiscovery(
     private val deviceMap = mutableMapOf<String, DalyDevice>()
     private val logger = getLogger(DalyDiscovery::class.java)
     private val mutex = Mutex()
+    private val scope = CoroutineScope(dispatcher)
+
+    public fun socAverage() = deviceMap.values.map { it.currentSoc() }.average().toInt()
 
 
     suspend fun reset() {
@@ -46,28 +49,54 @@ class DalyDiscovery(
         runBlocking {
             reset()
             batteryConnector.init()
-            batteryConnector.devices().filter {
-                it.name.startsWith("JHB-")
-            }.forEach {
-                logger.info("Starting to monitor device: ${it.name}")
-                deviceMap[it.address] =
-                    DalyDevice(
-                        dispatcher,
-                        client,
-                        objectMapper,
-                        it.address,
-                        it.name.replace("-", "_"),
-                        mutex,
-                        heatingPins[it.address]
-                    ).also {
-                        it.init()
-                    }
+        }
+        scope.launch {
+            discoveryJob(batteryConnector)
+        }
+    }
+
+    private suspend fun discoveryJob(batteryConnector: BatteryConnector) {
+        while (true) {
+            try {
+                updateDevices(batteryConnector)
+            } catch (e: Exception) {
+                logger.warn("Error while updating devices", e)
+            }
+            delay(Duration.ofMinutes(5).toMillis())
+        }
+    }
+
+    private suspend fun updateDevices(batteryConnector: BatteryConnector) {
+        batteryConnector.devices().filter {
+            it.name.startsWith("JHB-")
+        }.forEach {
+            logger.info("Starting to monitor device: ${it.name}")
+            if (it.address !in deviceMap) {
+                deviceMap[it.address] = initDaly(it)
+            }
+        }
+        deviceMap.forEach { (address, device) ->
+            if ((System.currentTimeMillis() - device.getLastUpdated()) > Duration.ofMinutes(5).toMillis()) {
+                deviceMap.remove(address)
             }
         }
     }
 
+    private fun initDaly(device: BtDevice): DalyDevice = DalyDevice(
+        dispatcher,
+        client,
+        objectMapper,
+        device.address,
+        device.name.replace("-", "_"),
+        mutex,
+        heatingPins[device.address]
+    ).also {
+        it.init()
+    }
+
     @PreDestroy
     fun tearDown() {
+        scope.cancel()
         deviceMap.forEach { (_, device) -> device.tearDown() }
     }
 }

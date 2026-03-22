@@ -1,6 +1,7 @@
 package de.klg71.solarman_sensor.power
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import de.klg71.solarman_sensor.battery.DalyDiscovery
 import de.klg71.solarman_sensor.battery.Measurement
 import de.klg71.solarman_sensor.battery.MqttPublisher
 import de.klg71.solarman_sensor.getLogger
@@ -23,7 +24,8 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 internal class PowerRegulator(
     private val objectMapper: ObjectMapper, private val dispatcher: CoroutineDispatcher,
     private val solarCommunicator: SolarCommunicator,
-    private val mqttClient: MqttClient
+    private val mqttClient: MqttClient,
+    private val dalyDiscovery: DalyDiscovery
 ) {
     private lateinit var smartMeterClient: BitshakeClient
     private val mqttPublisher = MqttPublisher(mqttClient, "solar_inverter", "solar_inverter", objectMapper)
@@ -119,7 +121,7 @@ internal class PowerRegulator(
                 delay(10000)
                 logger.info("Decreased to: {}", newPower)
             }
-            if (it > POWER_THRESHOLD && currentSetPower.load() < 2000) {
+        if (it > POWER_THRESHOLD && currentSetPower.load() < upperPowerLimit()) {
                 logger.info("Inverter produces too little power, increasing now")
                 val newPower = (currentSetPower.load() + it).let {
                     limitPower(it)
@@ -135,13 +137,20 @@ internal class PowerRegulator(
     }
 
     private val INVERTER_UPPER_LIMIT = 2000
+    private val INVERTER_UPPER_LIMIT_LOW_SOC = 800
     private val INVERTER_LOWER_LIMIT = 200
     private fun limitPower(power: Int) =
         when {
             power < 200 -> INVERTER_LOWER_LIMIT
-            power > 2000 -> INVERTER_UPPER_LIMIT
+            power > 2000 -> upperPowerLimit()
             else -> power
         }
+
+    private fun upperPowerLimit(): Int = if (dalyDiscovery.socAverage() > 50) {
+        INVERTER_UPPER_LIMIT
+    } else {
+        INVERTER_UPPER_LIMIT_LOW_SOC
+    }
 
     @OptIn(ExperimentalAtomicApi::class)
     public fun getCurrentSetPower() = currentSetPower.load()
