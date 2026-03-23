@@ -70,14 +70,13 @@ class DalyDiscovery(
     private suspend fun updateDevices(batteryConnector: BatteryConnector) {
         batteryConnector.devices().filter {
             it.name.startsWith("JHB-")
-        }.forEach {
+        }.filter { !deviceMap.containsKey(it.address) }.forEach {
             logger.info("Starting to monitor device: ${it.name}")
-            if (!deviceMap.containsKey(it.address)) {
-                deviceMap[it.address] = initDaly(it)
-            }
+            deviceMap[it.address] = initDaly(it)
         }
         deviceMap.forEach { (address, device) ->
             if ((System.currentTimeMillis() - device.getLastUpdated()) > Duration.ofMinutes(5).toMillis()) {
+                device.tearDown()
                 deviceMap.remove(address)
                 logger.info("Removing device ${device.name} because it was not updated.")
             }

@@ -121,7 +121,7 @@ internal class PowerRegulator(
                 delay(10000)
                 logger.info("Decreased to: {}", newPower)
             }
-        if (it > POWER_THRESHOLD && currentSetPower.load() < upperPowerLimit()) {
+            if (it > POWER_THRESHOLD && currentSetPower.load() < upperPowerLimit()) {
                 logger.info("Inverter produces too little power, increasing now")
                 val newPower = (currentSetPower.load() + it).let {
                     limitPower(it)
@@ -137,7 +137,8 @@ internal class PowerRegulator(
     }
 
     private val INVERTER_UPPER_LIMIT = 2000
-    private val INVERTER_UPPER_LIMIT_LOW_SOC = 800
+    private val INVERTER_UPPER_LIMIT_50_SOC = 800
+    private val INVERTER_UPPER_LIMIT_25_SOC = 400
     private val INVERTER_LOWER_LIMIT = 200
     private fun limitPower(power: Int) =
         when {
@@ -146,10 +147,12 @@ internal class PowerRegulator(
             else -> power
         }
 
-    private fun upperPowerLimit(): Int = if (dalyDiscovery.socAverage() > 50) {
-        INVERTER_UPPER_LIMIT
+    private fun upperPowerLimit(): Int = if (dalyDiscovery.socAverage() < 25) {
+        INVERTER_UPPER_LIMIT_25_SOC
+    } else if (dalyDiscovery.socAverage() < 50) {
+        INVERTER_UPPER_LIMIT_50_SOC
     } else {
-        INVERTER_UPPER_LIMIT_LOW_SOC
+        INVERTER_UPPER_LIMIT
     }
 
     @OptIn(ExperimentalAtomicApi::class)

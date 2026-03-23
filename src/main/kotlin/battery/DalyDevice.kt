@@ -25,9 +25,9 @@ class DalyDevice(
     dispatcher: CoroutineDispatcher,
     client: MqttClient,
     objectMapper: ObjectMapper,
-    private val deviceAddress: String,
-    public val name: String,
-    private val mutex: Mutex,
+    deviceAddress: String,
+    val name: String,
+    mutex: Mutex,
     private val heatingPin: Int?
 ) {
     private val batteryConnector: BatteryConnector = BatteryConnector(deviceAddress, mutex)
@@ -40,6 +40,10 @@ class DalyDevice(
     private val lastUpdated = AtomicLong(System.currentTimeMillis())
 
     private val scope = CoroutineScope(dispatcher)
+
+    companion object {
+        private const val NUMBER_OF_CELLS = 14
+    }
 
     fun init() {
         runBlocking {
@@ -59,6 +63,10 @@ class DalyDevice(
         mqttPublisher.homeAssistantDiscovery(Measurement.STRING, "errors", "errors")
         mqttPublisher.homeAssistantDiscovery(Measurement.STRING, "last-update", "lastUpdate")
         mqttPublisher.homeAssistantDiscovery(Measurement.STRING, "password", "password")
+
+        for (i in 0 until NUMBER_OF_CELLS) {
+            mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "cell-voltage-${i}", "cellVoltage${i}")
+        }
 
         mqttPublisher.homeAssistantDiscovery(Measurement.BINARY_POWER, "charge-mos-total", "chargeMosTotal")
         mqttPublisher.homeAssistantDiscovery(Measurement.BINARY_POWER, "discharge-mos-total", "dischargeMosTotal")
@@ -134,7 +142,7 @@ class DalyDevice(
                     publishInfo()
                 }
             } catch (e: Throwable) {
-                logger.error("Error while watching battery", e)
+                logger.error("Error while watching battery: $name", e)
             }
             delay(Duration.ofSeconds(10).toMillis())
         }
@@ -196,6 +204,7 @@ class DalyDevice(
 
     private suspend fun publishInfo() {
         publishSoc()
+        publishCellVoltage()
         publishErrors()
         publishTemp()
         publishMinMaxCellVoltage()
@@ -246,7 +255,29 @@ class DalyDevice(
         }
     }
 
-    public fun getLastUpdated() = lastUpdated.load()
+    private suspend fun publishCellVoltage() {
+        sendRequest(0x95).let {
+            if (it.isEmpty()) {
+                return
+            }
+            if (it[2] != 0x95) {
+                return
+            }
+            var cellNo = 0;
+            for (k in (0..12)) {
+                for (i in (0..2)) {
+                    val cellVoltage = (it[5 + i + i + (k * 13)]*256 + it[6 + i + i + (k * 13)])* 0.001
+                    mqttPublisher.publish("/cell-voltage-${cellNo}", cellVoltage)
+                    cellNo++;
+                    if (cellNo >= NUMBER_OF_CELLS) {
+                        return
+                    }
+                }
+            }
+        }
+    }
+
+    fun getLastUpdated() = lastUpdated.load()
 
     private suspend fun publishControlMosState() {
         getSettingData().let {
