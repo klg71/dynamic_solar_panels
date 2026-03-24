@@ -46,20 +46,18 @@ class DalyDiscovery(
 
     @PostConstruct
     fun init() {
-        val batteryConnector = BatteryConnector("", mutex)
         runBlocking {
             reset()
-            batteryConnector.init()
         }
         scope.launch {
-            discoveryJob(batteryConnector)
+            discoveryJob()
         }
     }
 
-    private suspend fun discoveryJob(batteryConnector: BatteryConnector) {
+    private suspend fun discoveryJob() {
         while (true) {
             try {
-                updateDevices(batteryConnector)
+                updateDevices()
             } catch (e: Exception) {
                 logger.warn("Error while updating devices", e)
             }
@@ -67,10 +65,8 @@ class DalyDiscovery(
         }
     }
 
-    private suspend fun updateDevices(batteryConnector: BatteryConnector) {
-        batteryConnector.devices().filter {
-            it.name.startsWith("JHB-")
-        }.filter { !deviceMap.containsKey(it.address) }.forEach {
+    private suspend fun updateDevices() {
+        devices().filter { !deviceMap.containsKey(it.address) }.forEach {
             logger.info("Starting to monitor device: ${it.name}")
             deviceMap[it.address] = initDaly(it)
         }
@@ -82,6 +78,17 @@ class DalyDiscovery(
             }
         }
     }
+
+    private suspend fun devices(): List<BtDevice> {
+        val batteryConnector = BatteryConnector("", mutex).also {
+            it.init()
+        }
+
+        return batteryConnector.devices().filter {
+            it.name.startsWith("JHB-")
+        }
+    }
+
 
     private fun initDaly(device: BtDevice): DalyDevice = DalyDevice(
         dispatcher,

@@ -109,7 +109,7 @@ internal class PowerRegulator(
     @OptIn(ExperimentalAtomicApi::class)
     private suspend fun controlPower() {
         smartMeterClient.getCurrentPower().statusSNS.SGM.power.let {
-            if (it < -POWER_THRESHOLD && currentSetPower.load() > 200) {
+            if ((it < -POWER_THRESHOLD && currentSetPower.load() > 200) || currentSetPower.load() > upperPowerLimit()) {
                 logger.info("Inverter produces too much power, decreasing now")
                 val newPower = (currentSetPower.load() + it).let {
                     limitPower(it - INVERTER_OFFSET)
@@ -143,7 +143,7 @@ internal class PowerRegulator(
     private fun limitPower(power: Int) =
         when {
             power < 200 -> INVERTER_LOWER_LIMIT
-            power > 2000 -> upperPowerLimit()
+            power > upperPowerLimit() -> upperPowerLimit()
             else -> power
         }
 
