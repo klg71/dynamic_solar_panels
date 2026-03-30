@@ -118,9 +118,9 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
     }
 
     fun disconnect() {
+        disconnectBluetooth()
         session?.close()
         client.disconnect()
-        disconnectBluetooth()
     }
 
     private fun disconnectBluetooth() {
