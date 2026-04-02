@@ -287,6 +287,9 @@ class DalyDevice(
             if (it[0] != 0x51) {
                 return
             }
+            if(it.size<70){
+                return
+            }
 
             val chargeMos = (it[0x21 * 2 + 4] == 1).toHaState()
             val dischargeMos = (it[0x22 * 2 + 4] == 1).toHaState()
@@ -419,9 +422,7 @@ class DalyDevice(
                 buffer.put(7, it.crcBytes[1])
             }
 
-            batteryConnector.sendRequest(buffer.array()).let {
-                println(it.map { it.toByte() }.toByteArray().toHexString())
-            }
+            batteryConnector.sendRequest(buffer.array())
         }
     }
 

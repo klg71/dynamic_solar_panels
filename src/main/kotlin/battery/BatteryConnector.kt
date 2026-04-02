@@ -1,9 +1,11 @@
 package de.klg71.solarman_sensor.battery
 
+import de.klg71.solarman_sensor.getLogger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import net.schmizz.sshj.SSHClient
+import net.schmizz.sshj.connection.ConnectionException
 import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import java.io.BufferedOutputStream
@@ -20,6 +22,7 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
     private lateinit var scanner: Scanner
     private lateinit var outputStream: OutputStreamWriter
     private lateinit var exec: Session.Shell
+    private val logger = getLogger(BatteryConnector::class.java)
 
     suspend fun init() {
         client.addHostKeyVerifier(PromiscuousVerifier())
@@ -127,7 +130,12 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
         val session = client.startSession()
         val cmd =
             session.exec("/usr/bin/python /home/lukas/repositories/battery-manager/bluetooth-client-disconnect.py $deviceAddress")
-        cmd.join(10, TimeUnit.SECONDS)
+        try {
+            cmd.join(10, TimeUnit.SECONDS)
+        } catch (e: ConnectionException) {
+            logger.warn(cmd.inputStream.readAllBytes().toString(Charset.defaultCharset()))
+            logger.warn("Could not disconnect bluetooth", e)
+        }
         session.close()
     }
 }
