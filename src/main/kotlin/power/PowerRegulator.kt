@@ -137,8 +137,8 @@ internal class PowerRegulator(
     }
 
     private val INVERTER_UPPER_LIMIT = 2000
-    private val INVERTER_UPPER_LIMIT_50_SOC = 2000
-    private val INVERTER_UPPER_LIMIT_25_SOC = 2000
+    private val INVERTER_UPPER_LIMIT_50_SOC = 800
+    private val INVERTER_UPPER_LIMIT_25_SOC = 400
     private val INVERTER_LOWER_LIMIT = 200
     private fun limitPower(power: Int) =
         when {
