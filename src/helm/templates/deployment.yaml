@@ -6,7 +6,7 @@ metadata:
     {{- include "service.labels" . | nindent 4 }}
 spec:
   strategy:
-    type: RollingUpdate
+    type: Recreate
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
