@@ -43,11 +43,19 @@ class DalyDevice(
 
     companion object {
         private const val NUMBER_OF_CELLS = 14
+        private const val MAX_SLEEP_TIME = 65535
     }
 
     fun init() {
         runBlocking {
             batteryConnector.init()
+            /*
+            while (getSleepTime() != MAX_SLEEP_TIME) {
+                
+                delay(500)
+            }
+
+             */
         }
         scope.launch { monitor() }
         mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "total-voltage", "totalVoltage")
@@ -242,7 +250,6 @@ class DalyDevice(
                 return
             }
             val cumVoltage = (it[4] * 256 + it[5]) * 0.1
-            (it[6] * 256 + it[7]) * 0.1
             val current = (it[8] * 256 + it[9]) * 0.1 - 3000
             val soc = (it[10] * 256 + it[11]) * 0.1
             mqttPublisher.publish("/soc", soc)
@@ -266,7 +273,10 @@ class DalyDevice(
             var cellNo = 0;
             for (k in (0..12)) {
                 for (i in (0..2)) {
-                    val cellVoltage = (it[5 + i + i + (k * 13)]*256 + it[6 + i + i + (k * 13)])* 0.001
+                    if (it.size < 6 + i + i + (k * 13)) {
+                        return
+                    }
+                    val cellVoltage = (it[5 + i + i + (k * 13)] * 256 + it[6 + i + i + (k * 13)]) * 0.001
                     mqttPublisher.publish("/cell-voltage-${cellNo}", cellVoltage)
                     cellNo++;
                     if (cellNo >= NUMBER_OF_CELLS) {
@@ -287,12 +297,13 @@ class DalyDevice(
             if (it[0] != 0x51) {
                 return
             }
-            if(it.size<70){
+            if (it.size < 70) {
                 return
             }
 
             val chargeMos = (it[0x21 * 2 + 4] == 1).toHaState()
             val dischargeMos = (it[0x22 * 2 + 4] == 1).toHaState()
+            val sleepTime = it[0x15 * 2 + 3] * 256 + it[0x15 * 2 + 4]
             mqttPublisher.publish("/charge-mos-control", chargeMos, true)
             mqttPublisher.publish("/discharge-mos-control", dischargeMos, true)
 
@@ -304,12 +315,30 @@ class DalyDevice(
         }
     }
 
+    private suspend fun getSleepTime(): Int? {
+        getSettingData().let {
+            if (it.isEmpty()) {
+                return null
+            }
+            if (it[0] != 0x51) {
+                return null
+            }
+            if (it.size < 70) {
+                return null
+            }
+            return it[0x15 * 2 + 3] * 256 + it[0x15 * 2 + 4]
+        }
+    }
+
     private suspend fun publishRealTimeDataLast() {
         getRealTimeDataLast().let {
             if (it.isEmpty()) {
                 return
             }
             if (it[0] != 0x51) {
+                return
+            }
+            if (it.size < 30) {
                 return
             }
 
@@ -393,6 +422,9 @@ class DalyDevice(
                 return
             }
             if (it[2] != 0x98) {
+                return
+            }
+            if (it.size < 11) {
                 return
             }
             parseErrorCodes(it).joinToString(",").let {

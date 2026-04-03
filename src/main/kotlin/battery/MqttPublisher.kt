@@ -1,7 +1,9 @@
 package de.klg71.solarman_sensor.battery
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import de.klg71.solarman_sensor.getLogger
 import org.eclipse.paho.client.mqttv3.MqttClient
+import org.eclipse.paho.client.mqttv3.MqttException
 import org.eclipse.paho.client.mqttv3.MqttMessage
 
 class MqttPublisher(
@@ -11,6 +13,7 @@ class MqttPublisher(
 
     private fun mqttRoot() = "$mqttRootPrefix/$name"
 
+    private val logger = getLogger(MqttPublisher::class.java)
     fun homeAssistantDiscovery(measurement: Measurement, stateTopic: String, uniqueId: String) {
         buildMap {
             put("name", stateTopic)
@@ -78,11 +81,22 @@ class MqttPublisher(
     }
 
     private fun <T> MqttClient.publish(topic: String, payload: T, retain: Boolean = false) {
-        if (payload is String) {
-            publish(topic, MqttMessage(payload.toByteArray()).also { it.isRetained = retain })
-        } else {
-            publish(topic, MqttMessage(objectMapper.writeValueAsBytes(payload)).also { it.isRetained = retain })
+        try {
+
+            if (payload is String) {
+                publish(topic, MqttMessage(payload.toByteArray()).also { it.isRetained = retain })
+            } else {
+                publish(topic, MqttMessage(objectMapper.writeValueAsBytes(payload)).also { it.isRetained = retain })
+            }
+        } catch (e: MqttException) {
+            if (e.message?.contains("Client is not connected") == true) {
+                logger.info("Client is not connected, trying to reconnect")
+                reconnect()
+            } else {
+                throw e
+            }
         }
+
 
     }
 }

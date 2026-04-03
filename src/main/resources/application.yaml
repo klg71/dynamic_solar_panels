@@ -6,4 +6,7 @@ server:
   port: 8080
 mqtt:
   host: homeassistant-mosquitto.tail592ffe.ts.net
+logging:
+  level:
+    net.schmizz.sshj.transport: WARN
 
