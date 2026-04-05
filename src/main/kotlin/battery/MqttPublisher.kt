@@ -2,12 +2,10 @@ package de.klg71.solarman_sensor.battery
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import de.klg71.solarman_sensor.getLogger
-import org.eclipse.paho.client.mqttv3.MqttClient
-import org.eclipse.paho.client.mqttv3.MqttException
 import org.eclipse.paho.client.mqttv3.MqttMessage
 
 class MqttPublisher(
-    private val client: MqttClient, private val mqttRootPrefix: String, private val name: String,
+    private val client: ReconnectableMqttClient, private val mqttRootPrefix: String, private val name: String,
     private val objectMapper: ObjectMapper
 ) {
 
@@ -80,24 +78,5 @@ class MqttPublisher(
         client.publish("${mqttRoot()}$topic", payload, retain)
     }
 
-    private fun <T> MqttClient.publish(topic: String, payload: T, retain: Boolean = false) {
-        try {
-
-            if (payload is String) {
-                publish(topic, MqttMessage(payload.toByteArray()).also { it.isRetained = retain })
-            } else {
-                publish(topic, MqttMessage(objectMapper.writeValueAsBytes(payload)).also { it.isRetained = retain })
-            }
-        } catch (e: MqttException) {
-            if (e.message?.contains("Client is not connected") == true) {
-                logger.info("Client is not connected, trying to reconnect")
-                reconnect()
-            } else {
-                throw e
-            }
-        }
-
-
-    }
 }
 

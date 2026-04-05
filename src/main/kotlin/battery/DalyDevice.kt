@@ -23,7 +23,7 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalAtomicApi::class)
 class DalyDevice(
     dispatcher: CoroutineDispatcher,
-    client: MqttClient,
+    client: ReconnectableMqttClient,
     objectMapper: ObjectMapper,
     deviceAddress: String,
     val name: String,

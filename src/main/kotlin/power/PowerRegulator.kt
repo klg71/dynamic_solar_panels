@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import de.klg71.solarman_sensor.battery.DalyDiscovery
 import de.klg71.solarman_sensor.battery.Measurement
 import de.klg71.solarman_sensor.battery.MqttPublisher
+import de.klg71.solarman_sensor.battery.ReconnectableMqttClient
 import de.klg71.solarman_sensor.getLogger
 import de.klg71.solarman_sensor.solarman.SolarCommunicator
 import de.klg71.solarman_sensor.solarman.SolarInfo
@@ -15,7 +16,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.eclipse.paho.client.mqttv3.MqttClient
 import org.springframework.stereotype.Service
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -24,7 +24,7 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 internal class PowerRegulator(
     private val objectMapper: ObjectMapper, private val dispatcher: CoroutineDispatcher,
     private val solarCommunicator: SolarCommunicator,
-    private val mqttClient: MqttClient,
+    private val mqttClient: ReconnectableMqttClient,
     private val dalyDiscovery: DalyDiscovery
 ) {
     private lateinit var smartMeterClient: BitshakeClient

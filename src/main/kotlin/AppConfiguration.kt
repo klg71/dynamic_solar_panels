@@ -1,5 +1,8 @@
 package de.klg71.solarman_sensor
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import de.klg71.solarman_sensor.battery.ReconnectableMqttClient
 import kotlinx.coroutines.Dispatchers
 import org.eclipse.paho.client.mqttv3.MqttClient
 import org.springframework.beans.factory.annotation.Value
@@ -14,6 +17,8 @@ internal class AppConfiguration {
     @Bean
     fun mqttClient(@Value("\${mqtt.host}") host: String) =
         MqttClient("tcp://$host:1883", "dynamic-solar-panels")
-            .also { it.connect() }
+            .also { it.connect() }.let {
+                ReconnectableMqttClient(it, ObjectMapper().also { it.registerKotlinModule() })
+            }
 
 }

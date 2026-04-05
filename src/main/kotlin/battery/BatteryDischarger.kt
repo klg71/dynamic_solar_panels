@@ -7,7 +7,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.eclipse.paho.client.mqttv3.MqttClient
 import org.springframework.stereotype.Component
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
@@ -22,7 +21,7 @@ fun fromHaState(state: String) = state.lowercase() == "on"
 @OptIn(ExperimentalAtomicApi::class)
 @Component
 class BatteryDischarger(
-    private val mqttClient: MqttClient,
+    private val mqttClient: ReconnectableMqttClient,
     private val dispatcher: CoroutineDispatcher,
     objectMapper: ObjectMapper
 ) {

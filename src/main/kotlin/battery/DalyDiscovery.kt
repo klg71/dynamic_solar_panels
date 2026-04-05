@@ -20,7 +20,7 @@ data class DalyDeviceInfo(val address: String, val heatingPin: Int? = null)
 class DalyDiscovery(
     private val objectMapper: ObjectMapper,
     private val dispatcher: CoroutineDispatcher,
-    private val client: MqttClient
+    private val client: ReconnectableMqttClient
 ) {
     private val heatingPins = mapOf<String, Int>()
     private val deviceMap = ConcurrentHashMap<String, DalyDevice>()
@@ -61,7 +61,7 @@ class DalyDiscovery(
             } catch (e: Exception) {
                 logger.warn("Error while updating devices", e)
             }
-            delay(Duration.ofMinutes(5).toMillis())
+            delay(Duration.ofMinutes(2).toMillis())
         }
     }
 
