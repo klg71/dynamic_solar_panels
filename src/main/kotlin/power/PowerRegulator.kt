@@ -137,7 +137,7 @@ internal class PowerRegulator(
     }
 
     private val INVERTER_UPPER_LIMIT = 2000
-    private val INVERTER_UPPER_LIMIT_50_SOC = 800
+    private val INVERTER_UPPER_LIMIT_40_SOC = 800
     private val INVERTER_UPPER_LIMIT_25_SOC = 400
     private val INVERTER_LOWER_LIMIT = 200
     private fun limitPower(power: Int) =
@@ -149,8 +149,8 @@ internal class PowerRegulator(
 
     private fun upperPowerLimit(): Int = if (dalyDiscovery.socAverage() < 25) {
         INVERTER_UPPER_LIMIT_25_SOC
-    } else if (dalyDiscovery.socAverage() < 50) {
-        INVERTER_UPPER_LIMIT_50_SOC
+    } else if (dalyDiscovery.socAverage() < 40) {
+        INVERTER_UPPER_LIMIT_40_SOC
     } else {
         INVERTER_UPPER_LIMIT
     }

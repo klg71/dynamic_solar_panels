@@ -7,7 +7,6 @@ import io.github.davidepianca98.fromHexString
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import org.eclipse.paho.client.mqttv3.MqttClient
 import org.eclipse.paho.client.mqttv3.MqttMessage
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
@@ -71,6 +70,13 @@ class DalyDevice(
         mqttPublisher.homeAssistantDiscovery(Measurement.STRING, "errors", "errors")
         mqttPublisher.homeAssistantDiscovery(Measurement.STRING, "last-update", "lastUpdate")
         mqttPublisher.homeAssistantDiscovery(Measurement.STRING, "password", "password")
+        mqttPublisher.homeAssistantDiscovery(Measurement.STRING, "battery-type", "battery-type")
+        mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "max-cell-voltage-limit", "maxCellVoltageLimit")
+        mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "min-cell-voltage-limit", "minCellVoltageLimit")
+        mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "max-total-voltage", "maxTotalVoltage")
+        mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "min-total-voltage", "minTotalVoltage")
+        mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "max-charging-current", "maxChargingCurrent")
+        mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "min-charging-current", "minChargingCurrent")
 
         for (i in 0 until NUMBER_OF_CELLS) {
             mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "cell-voltage-${i}", "cellVoltage${i}")
@@ -105,9 +111,19 @@ class DalyDevice(
                 } else {
                     setCommand06(0x0122, 0)
                 }
-                publishControlMosState()
+                publishSettingState()
             }
         }
+    }
+
+    private suspend fun setSleepTime(seconds: Int) {
+        setCommand06(0x0115, seconds)
+        publishSettingState()
+    }
+
+    private suspend fun setBatteryType(type: Int) {
+        setCommand06(0x0113, type)
+        publishSettingState()
     }
 
     private fun setChargeMos(topic: String, message: MqttMessage) {
@@ -118,7 +134,7 @@ class DalyDevice(
                 } else {
                     setCommand06(0x0121, 0)
                 }
-                publishControlMosState()
+                publishSettingState()
             }
         }
     }
@@ -217,7 +233,7 @@ class DalyDevice(
         publishTemp()
         publishMinMaxCellVoltage()
         publishMosState()
-        publishControlMosState()
+        publishSettingState()
         publishRealTimeDataLast()
         publishHeating()
         publishConnected()
@@ -289,7 +305,7 @@ class DalyDevice(
 
     fun getLastUpdated() = lastUpdated.load()
 
-    private suspend fun publishControlMosState() {
+    private suspend fun publishSettingState() {
         getSettingData().let {
             if (it.isEmpty()) {
                 return
@@ -304,8 +320,30 @@ class DalyDevice(
             val chargeMos = (it[0x21 * 2 + 4] == 1).toHaState()
             val dischargeMos = (it[0x22 * 2 + 4] == 1).toHaState()
             val sleepTime = it[0x15 * 2 + 3] * 256 + it[0x15 * 2 + 4]
+            val batteryType = when (it[0x13 * 2 * 4]) {
+                0 -> "LifePo"
+                1 -> "NMC"
+                2 -> "LiTi"
+                3 -> "Natrium"
+                else -> "unknown type"
+            }
+            val minCellVoltage = it[0x25 * 2 + 3] * 256 + it[0x25 * 2 + 4]
+            val maxCellVoltage = it.readRegister(0x31)
+            val maxTotalVoltage = it.readRegister(0x39)
+            val minTotalVoltage = it.readRegister(0x3D)
+            val maxDischargeCurrent = -(it.readRegister(0x46) - 30000 / 10.0)
+            val maxChargeCurrent = (it.readRegister(0x41) - 30000 / 10.0)
             mqttPublisher.publish("/charge-mos-control", chargeMos, true)
             mqttPublisher.publish("/discharge-mos-control", dischargeMos, true)
+            mqttPublisher.publish("/sleep-time", sleepTime, true)
+            mqttPublisher.publish("/battery-type", batteryType, true)
+
+            mqttPublisher.publish("/min-cell-voltage-limit", minCellVoltage, true)
+            mqttPublisher.publish("/max-cell-voltage-limit", maxCellVoltage, true)
+            mqttPublisher.publish("/min-total-voltage", minTotalVoltage, true)
+            mqttPublisher.publish("/max-total-voltage", maxTotalVoltage, true)
+            mqttPublisher.publish("/max-charge-current", maxChargeCurrent, true)
+            mqttPublisher.publish("/max-discharge-current", maxDischargeCurrent, true)
 
             val password = listOf(38, 39, 40).flatMap { listOf(it * 2 + 3, it * 2 + 4) }.map { index ->
                 it[index].toByte()
@@ -314,6 +352,9 @@ class DalyDevice(
 
         }
     }
+
+    private fun List<Int>.readRegister(address: Byte): Int =
+        get(address * 2 + 3) * 256 + get(address * 2 + 4)
 
     private suspend fun getSleepTime(): Int? {
         getSettingData().let {
