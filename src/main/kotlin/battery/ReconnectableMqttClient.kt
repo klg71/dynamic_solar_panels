@@ -13,7 +13,6 @@ class ReconnectableMqttClient(private val client: MqttClient, private val object
 
     fun publish(topic: String, message: MqttMessage) {
         try {
-
             client.publish(topic, message)
         } catch (e: MqttException) {
             if (e.message?.contains("Client is not connected") == true) {

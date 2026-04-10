@@ -17,6 +17,7 @@ import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.random.Random
 
 
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalAtomicApi::class)
@@ -61,6 +62,7 @@ class DalyDevice(
         mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "total-current", "totalCurrent")
         mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "balance-current", "balanceCurrent")
         mqttPublisher.homeAssistantDiscovery(Measurement.NUMBER, "cycle-number", "cycleNumber")
+        mqttPublisher.homeAssistantDiscovery(Measurement.NUMBER, "sleep-time", "sleepTime")
         mqttPublisher.homeAssistantDiscovery(Measurement.PERCENTAGE, "soc", "soc")
         mqttPublisher.homeAssistantDiscovery(Measurement.TEMPERATURE, "temperature_0", "temperature_1")
         mqttPublisher.homeAssistantDiscovery(Measurement.TEMPERATURE, "temperature_1", "temperature_2")
@@ -75,8 +77,8 @@ class DalyDevice(
         mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "min-cell-voltage-limit", "minCellVoltageLimit")
         mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "max-total-voltage", "maxTotalVoltage")
         mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "min-total-voltage", "minTotalVoltage")
-        mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "max-charging-current", "maxChargingCurrent")
-        mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "min-charging-current", "minChargingCurrent")
+        mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "max-charge-current", "minChargeCurrent")
+        mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "max-discharge-current", "maxChargeCurrent")
 
         for (i in 0 until NUMBER_OF_CELLS) {
             mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "cell-voltage-${i}", "cellVoltage${i}")
@@ -160,6 +162,7 @@ class DalyDevice(
 
 
     private suspend fun monitor() {
+        delay(Random(System.currentTimeMillis()).nextInt(15000).toLong())
         while (true) {
             try {
                 if (shouldConnect.load()) {
@@ -313,26 +316,26 @@ class DalyDevice(
             if (it[0] != 0x51) {
                 return
             }
-            if (it.size < 70) {
+            if (it.size < 117) {
                 return
             }
 
             val chargeMos = (it[0x21 * 2 + 4] == 1).toHaState()
             val dischargeMos = (it[0x22 * 2 + 4] == 1).toHaState()
             val sleepTime = it[0x15 * 2 + 3] * 256 + it[0x15 * 2 + 4]
-            val batteryType = when (it[0x13 * 2 * 4]) {
+            val batteryType = when (it.readRegister(0x13)) {
                 0 -> "LifePo"
                 1 -> "NMC"
                 2 -> "LiTi"
                 3 -> "Natrium"
                 else -> "unknown type"
             }
-            val minCellVoltage = it[0x25 * 2 + 3] * 256 + it[0x25 * 2 + 4]
-            val maxCellVoltage = it.readRegister(0x31)
-            val maxTotalVoltage = it.readRegister(0x39)
-            val minTotalVoltage = it.readRegister(0x3D)
-            val maxDischargeCurrent = -(it.readRegister(0x46) - 30000 / 10.0)
-            val maxChargeCurrent = (it.readRegister(0x41) - 30000 / 10.0)
+            val minCellVoltage = it.readRegister(0x35)/1000.0
+            val maxCellVoltage = it.readRegister(0x31)/1000.0
+            val maxTotalVoltage = it.readRegister(0x39)/10.0
+            val minTotalVoltage = it.readRegister(0x3D)/10.0
+            val maxDischargeCurrent = (it.readRegister(0x46) - 30000) / 10.0
+            val maxChargeCurrent = -(it.readRegister(0x41) - 30000) / 10.0
             mqttPublisher.publish("/charge-mos-control", chargeMos, true)
             mqttPublisher.publish("/discharge-mos-control", dischargeMos, true)
             mqttPublisher.publish("/sleep-time", sleepTime, true)

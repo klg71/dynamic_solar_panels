@@ -85,7 +85,7 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
                         answer = line
                         break
                     }
-                    delay(100)
+                    delay(50)
                 }
             }
             return answer.hexToUByteArray().map { it.toInt() }
@@ -113,16 +113,21 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
                     val line = scanner.nextLine()
                     if (line == "Connected") {
                         break
+                    } else if ("BleakDeviceNotFoundError" in line || "TimeoutError" in line) {
+                        throw RuntimeException("Could not connect to device $deviceAddress");
+                    } else {
+                        logger.debug(line)
                     }
-                    delay(500)
+                    delay(10)
                 }
             }
         }
     }
 
     fun disconnect() {
-        disconnectBluetooth()
+        outputStream.append(0x04.toChar())
         session?.close()
+        disconnectBluetooth()
         client.disconnect()
     }
 
