@@ -169,7 +169,9 @@ class DalyDevice(
                     publishInfo()
                 }
             } catch (e: Throwable) {
-                logger.error("Error while watching battery: $name", e)
+                if (e !is CancellationException) {
+                    logger.error("Error while watching battery: $name", e)
+                }
             }
             delay(Duration.ofSeconds(10).toMillis())
         }
@@ -330,10 +332,10 @@ class DalyDevice(
                 3 -> "Natrium"
                 else -> "unknown type"
             }
-            val minCellVoltage = it.readRegister(0x35)/1000.0
-            val maxCellVoltage = it.readRegister(0x31)/1000.0
-            val maxTotalVoltage = it.readRegister(0x39)/10.0
-            val minTotalVoltage = it.readRegister(0x3D)/10.0
+            val minCellVoltage = it.readRegister(0x35) / 1000.0
+            val maxCellVoltage = it.readRegister(0x31) / 1000.0
+            val maxTotalVoltage = it.readRegister(0x39) / 10.0
+            val minTotalVoltage = it.readRegister(0x3D) / 10.0
             val maxDischargeCurrent = (it.readRegister(0x46) - 30000) / 10.0
             val maxChargeCurrent = -(it.readRegister(0x41) - 30000) / 10.0
             mqttPublisher.publish("/charge-mos-control", chargeMos, true)

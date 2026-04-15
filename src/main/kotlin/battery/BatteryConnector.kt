@@ -125,7 +125,9 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
     }
 
     fun disconnect() {
-        outputStream.append(0x04.toChar())
+        if (session?.isOpen == true) {
+            outputStream.append(0x04.toChar())
+        }
         session?.close()
         disconnectBluetooth()
         client.disconnect()
@@ -136,7 +138,7 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
         val cmd =
             session.exec("/usr/bin/python /home/lukas/repositories/battery-manager/bluetooth-client-disconnect.py $deviceAddress")
         try {
-            cmd.join(10, TimeUnit.SECONDS)
+            cmd.join(15, TimeUnit.SECONDS)
         } catch (e: ConnectionException) {
             logger.warn(cmd.inputStream.readAllBytes().toString(Charset.defaultCharset()))
             logger.warn("Could not disconnect bluetooth", e)

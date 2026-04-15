@@ -136,7 +136,7 @@ internal class PowerRegulator(
         }
     }
 
-    private val INVERTER_LOWER_LIMIT = 200
+    private val INVERTER_LOWER_LIMIT = 300
     private val POWER_LIMITS = mapOf(
         100 to 2000,
         80 to 1600,
