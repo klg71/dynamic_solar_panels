@@ -8,7 +8,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
-import org.eclipse.paho.client.mqttv3.MqttClient
 import org.springframework.stereotype.Component
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
@@ -56,12 +55,18 @@ class DalyDiscovery(
 
     private suspend fun discoveryJob() {
         while (true) {
-            try {
-                updateDevices()
-            } catch (e: Exception) {
-                logger.warn("Error while updating devices", e)
+            if (try {
+                    updateDevices()
+                    false
+                } catch (e: Exception) {
+                    logger.warn("Error while updating devices", e)
+                    true
+                }
+            ) {
+                delay(Duration.ofMinutes(1).toMillis())
+            } else {
+                delay(Duration.ofMinutes(5).toMillis())
             }
-            delay(Duration.ofMinutes(2).toMillis())
         }
     }
 
@@ -90,7 +95,7 @@ class DalyDiscovery(
     }
 
 
-    private fun initDaly(device: BtDevice): DalyDevice = DalyDevice(
+    private suspend fun initDaly(device: BtDevice): DalyDevice = DalyDevice(
         dispatcher,
         client,
         objectMapper,

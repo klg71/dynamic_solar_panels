@@ -136,12 +136,12 @@ internal class PowerRegulator(
         }
     }
 
-    private val INVERTER_LOWER_LIMIT = 300
+    private val INVERTER_LOWER_LIMIT = 400
     private val POWER_LIMITS = mapOf(
         100 to 2000,
-        80 to 1600,
-        60 to 1200,
-        40 to 800,
+        60 to 1600,
+        40 to 1200,
+        30 to 800,
         0 to INVERTER_LOWER_LIMIT
     )
 
@@ -153,7 +153,9 @@ internal class PowerRegulator(
         }
 
     private fun upperPowerLimit(): Int =
-        POWER_LIMITS.entries.sortedBy { it.key }.reversed().first { it.key <= dalyDiscovery.socAverage() }.value
+        POWER_LIMITS.entries.sortedBy { it.key }
+            .reversed()
+            .first { it.key <= dalyDiscovery.socAverage() }.value
 
     @OptIn(ExperimentalAtomicApi::class)
     public fun getCurrentSetPower() = currentSetPower.load()

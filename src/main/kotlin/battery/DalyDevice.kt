@@ -43,20 +43,10 @@ class DalyDevice(
 
     companion object {
         private const val NUMBER_OF_CELLS = 14
-        private const val MAX_SLEEP_TIME = 65535
     }
 
-    fun init() {
-        runBlocking {
-            batteryConnector.init()
-            /*
-            while (getSleepTime() != MAX_SLEEP_TIME) {
-                
-                delay(500)
-            }
-
-             */
-        }
+    suspend fun init() {
+        batteryConnector.init()
         scope.launch { monitor() }
         mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "total-voltage", "totalVoltage")
         mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "total-current", "totalCurrent")
@@ -98,6 +88,7 @@ class DalyDevice(
 
         mqttPublisher.homeAssistantDiscoverySwitch("connected", "connected/set", "connected")
         mqttPublisher.subscribe("/connected/set", ::setConnected)
+        publishSoc()
     }
 
     fun tearDown() {
