@@ -19,6 +19,9 @@ import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.random.Random
 
+enum class BatteryType(val cellVoltage: Double) {
+    NMC(3.7), LifePO(3.2), LiTi(2.3), Natrium(3.0), unknown(0.0)
+}
 
 @OptIn(ExperimentalUnsignedTypes::class, ExperimentalAtomicApi::class)
 class DalyDevice(
@@ -34,15 +37,17 @@ class DalyDevice(
     private val logger = getLogger(DalyDevice::class.java)
     private val numberOfTempSensors = 2
     private val shouldConnect = AtomicBoolean(true)
-    private val currentSoc = AtomicReference<Double>(0.0)
+    private val currentSoc = AtomicReference(0.0)
     private val mqttPublisher = MqttPublisher(client, "daly", name.replace("-", "_"), objectMapper)
     private val operationMutex = Mutex();
     private val lastUpdated = AtomicLong(System.currentTimeMillis())
+    private var numberOfStrings: Int = 0
+    private var type: BatteryType = BatteryType.unknown
 
     private val scope = CoroutineScope(dispatcher)
 
     companion object {
-        private const val NUMBER_OF_CELLS = 14
+        private const val MAX_NUMBER_OF_CELLS = 14
     }
 
     suspend fun init() {
@@ -53,6 +58,7 @@ class DalyDevice(
         mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "balance-current", "balanceCurrent")
         mqttPublisher.homeAssistantDiscovery(Measurement.NUMBER, "cycle-number", "cycleNumber")
         mqttPublisher.homeAssistantDiscovery(Measurement.NUMBER, "sleep-time", "sleepTime")
+        mqttPublisher.homeAssistantDiscovery(Measurement.NUMBER, "number-of-strings", "numberOfStrings")
         mqttPublisher.homeAssistantDiscovery(Measurement.PERCENTAGE, "soc", "soc")
         mqttPublisher.homeAssistantDiscovery(Measurement.TEMPERATURE, "temperature_0", "temperature_1")
         mqttPublisher.homeAssistantDiscovery(Measurement.TEMPERATURE, "temperature_1", "temperature_2")
@@ -68,9 +74,11 @@ class DalyDevice(
         mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "max-total-voltage", "maxTotalVoltage")
         mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "min-total-voltage", "minTotalVoltage")
         mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "max-charge-current", "minChargeCurrent")
+        mqttPublisher.homeAssistantDiscovery(Measurement.ENERGY, "remaining-capacity", "remainingCapacity")
+        mqttPublisher.homeAssistantDiscovery(Measurement.POWER, "power", "power")
         mqttPublisher.homeAssistantDiscovery(Measurement.CURRENT, "max-discharge-current", "maxChargeCurrent")
 
-        for (i in 0 until NUMBER_OF_CELLS) {
+        for (i in 0 until MAX_NUMBER_OF_CELLS) {
             mqttPublisher.homeAssistantDiscovery(Measurement.VOLT, "cell-voltage-${i}", "cellVoltage${i}")
         }
 
@@ -220,6 +228,19 @@ class DalyDevice(
         }
     }
 
+    private suspend fun getRealTimeData(): List<Int> {
+        operationMutex.withLock {
+            "81030041003e8bce".fromHexString().let {
+                var answer = batteryConnector.sendRequest(it)
+                while (answer.isEmpty()) {
+                    delay(1000)
+                    answer = batteryConnector.sendRequest(it, clean = true)
+                }
+                return answer
+            }
+        }
+    }
+
     private val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 
     private suspend fun publishInfo() {
@@ -291,7 +312,7 @@ class DalyDevice(
                     val cellVoltage = (it[5 + i + i + (k * 13)] * 256 + it[6 + i + i + (k * 13)]) * 0.001
                     mqttPublisher.publish("/cell-voltage-${cellNo}", cellVoltage)
                     cellNo++;
-                    if (cellNo >= NUMBER_OF_CELLS) {
+                    if (cellNo >= numberOfStrings) {
                         return
                     }
                 }
@@ -316,12 +337,12 @@ class DalyDevice(
             val chargeMos = (it[0x21 * 2 + 4] == 1).toHaState()
             val dischargeMos = (it[0x22 * 2 + 4] == 1).toHaState()
             val sleepTime = it[0x15 * 2 + 3] * 256 + it[0x15 * 2 + 4]
-            val batteryType = when (it.readRegister(0x13)) {
-                0 -> "LifePo"
-                1 -> "NMC"
-                2 -> "LiTi"
-                3 -> "Natrium"
-                else -> "unknown type"
+            type = when (it.readRegister(0x13)) {
+                0 -> BatteryType.LifePO
+                1 -> BatteryType.NMC
+                2 -> BatteryType.LiTi
+                3 -> BatteryType.Natrium
+                else -> BatteryType.unknown
             }
             val minCellVoltage = it.readRegister(0x35) / 1000.0
             val maxCellVoltage = it.readRegister(0x31) / 1000.0
@@ -332,7 +353,7 @@ class DalyDevice(
             mqttPublisher.publish("/charge-mos-control", chargeMos, true)
             mqttPublisher.publish("/discharge-mos-control", dischargeMos, true)
             mqttPublisher.publish("/sleep-time", sleepTime, true)
-            mqttPublisher.publish("/battery-type", batteryType, true)
+            mqttPublisher.publish("/battery-type", type.name,true)
 
             mqttPublisher.publish("/min-cell-voltage-limit", minCellVoltage, true)
             mqttPublisher.publish("/max-cell-voltage-limit", maxCellVoltage, true)
@@ -340,6 +361,8 @@ class DalyDevice(
             mqttPublisher.publish("/max-total-voltage", maxTotalVoltage, true)
             mqttPublisher.publish("/max-charge-current", maxChargeCurrent, true)
             mqttPublisher.publish("/max-discharge-current", maxDischargeCurrent, true)
+            numberOfStrings = it.readRegister(0x01)
+            mqttPublisher.publish("/number-of-strings", numberOfStrings, true)
 
             val password = listOf(38, 39, 40).flatMap { listOf(it * 2 + 3, it * 2 + 4) }.map { index ->
                 it[index].toByte()
@@ -379,11 +402,17 @@ class DalyDevice(
                 return
             }
 
+            val remainingCapacity = (it.readRegister(0xA)) * numberOfStrings * type.cellVoltage / 10000.0
+            mqttPublisher.publish("/remaining-capacity", remainingCapacity)
+
             val cycleNumber = (it[0xb * 2 + 3] * 256 + it[0xb * 2 + 4])
             mqttPublisher.publish("/cycle-number", cycleNumber)
 
             val balanceCurrent = ((it[0xd * 2 + 3] * 256 + it[0xd * 2 + 4]) - 30000) / 1000.0
             mqttPublisher.publish("/balance-current", balanceCurrent)
+
+            val power = it.readRegister(0x17)
+            mqttPublisher.publish("/power", power)
         }
     }
 
