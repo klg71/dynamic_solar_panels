@@ -6,6 +6,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.connection.ConnectionException
+import net.schmizz.sshj.connection.channel.OpenFailException
 import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import java.io.BufferedOutputStream
@@ -99,28 +100,35 @@ class BatteryConnector(private val deviceAddress: String, private val mutex: Mut
             client.connect("garage-pi")
             client.authPassword("lukas", "1805Rh")
         }
-        if (!(session?.isOpen ?: false)) {
-            session = client.startSession()?.also {
-                it.allocateDefaultPTY()
-                exec = it.startShell()
-                outputStream = OutputStreamWriter(BufferedOutputStream(exec.outputStream))
-                outputStream.appendLine(
-                    "/usr/bin/python /home/lukas/repositories/battery-manager/bluetooth-client-continuous.py $deviceAddress"
-                )
-                outputStream.flush()
-                scanner = Scanner(exec.inputStream)
-                while (true) {
-                    val line = scanner.nextLine()
-                    if (line == "Connected") {
-                        break
-                    } else if ("BleakDeviceNotFoundError" in line || "TimeoutError" in line) {
-                        throw RuntimeException("Could not connect to device $deviceAddress");
-                    } else {
-                        logger.debug(line)
+        try {
+
+            if (!(session?.isOpen ?: false)) {
+                session = client.startSession()?.also {
+                    it.allocateDefaultPTY()
+                    exec = it.startShell()
+                    outputStream = OutputStreamWriter(BufferedOutputStream(exec.outputStream))
+                    outputStream.appendLine(
+                        "/usr/bin/python /home/lukas/repositories/battery-manager/bluetooth-client-continuous.py $deviceAddress"
+                    )
+                    outputStream.flush()
+                    scanner = Scanner(exec.inputStream)
+                    while (true) {
+                        val line = scanner.nextLine()
+                        if (line == "Connected") {
+                            break
+                        } else if ("BleakDeviceNotFoundError" in line || "TimeoutError" in line) {
+                            throw RuntimeException("Could not connect to device $deviceAddress");
+                        } else {
+                            logger.debug(line)
+                        }
+                        delay(10)
                     }
-                    delay(10)
                 }
             }
+        } catch (e: OpenFailException) {
+            session?.close()
+            client.disconnect()
+            throw e
         }
     }
 
