@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.springframework.stereotype.Service
 import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 @Service
@@ -32,6 +33,9 @@ internal class PowerRegulator(
 
     private val scope = CoroutineScope(dispatcher)
     private val logger = getLogger(PowerRegulator::class.java)
+
+    @OptIn(ExperimentalAtomicApi::class)
+    private val currentSolarInfo = AtomicReference<SolarInfo?>(null)
 
     @OptIn(ExperimentalAtomicApi::class)
     private val currentSetPower = AtomicInt(1600)
@@ -87,11 +91,16 @@ internal class PowerRegulator(
         }
     }
 
+    @OptIn(ExperimentalAtomicApi::class)
     private suspend fun publishInfo() {
         solarCommunicator.readSolarInfo()?.let {
+            currentSolarInfo.store(it)
             publish(it)
         }
     }
+
+    @OptIn(ExperimentalAtomicApi::class)
+    fun currentSolarInfo() = currentSolarInfo.load()
 
     private fun publish(solarInfo: SolarInfo) {
         mqttPublisher.publish("/total-power", solarInfo.totalPower)

@@ -14,7 +14,6 @@ import org.springframework.stereotype.Component
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 @OptIn(ExperimentalAtomicApi::class)
-@Component
 internal class DynamicConsumerSwitch(private val powerRegulator: PowerRegulator,
                                      private val dispatcher: CoroutineDispatcher,
     private val objectMapper: ObjectMapper) {
@@ -40,12 +39,6 @@ internal class DynamicConsumerSwitch(private val powerRegulator: PowerRegulator,
         }
     }
     private suspend fun controlConsumers(client: HomeAssistantClient) {
-        while(true){
-            if(powerRegulator.getCurrentSetPower()<2000  ){
-
-            }
-            delay(5000)
-        }
     }
 
 
